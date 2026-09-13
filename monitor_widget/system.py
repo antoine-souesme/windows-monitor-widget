@@ -42,7 +42,7 @@ def acquire_single_instance():
     global _lock
     if IS_WINDOWS:
         kernel32 = ctypes.windll.kernel32
-        _lock = kernel32.CreateMutexW(None, False, "Local\\CpuWidgetSingleInstance")
+        _lock = kernel32.CreateMutexW(None, False, "Local\\MonitorWidgetSingleInstance")
         return kernel32.GetLastError() != _ERROR_ALREADY_EXISTS
     try:
         import fcntl
@@ -121,7 +121,7 @@ def is_point_on_screen(x, y, window=None):
 # --------------------------------------------------------------------------
 
 _RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-_VALUE_NAME = "CpuWidget"
+_VALUE_NAME = "MonitorWidget"
 
 
 def _winreg():
@@ -144,7 +144,7 @@ def startup_command():
     pythonw = os.path.join(directory, "pythonw.exe")
     if not os.path.exists(pythonw):
         pythonw = sys.executable
-    script = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "cpu_widget.py"))
+    script = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "main.py"))
     return '"{}" "{}"'.format(pythonw, script)
 
 

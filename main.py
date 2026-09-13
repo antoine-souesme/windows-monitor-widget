@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Entry point of the CPU desktop widget.
+"""Entry point of the Monitor Widget desktop application.
 
-Run it without a console window:  pythonw.exe cpu_widget.py
+Run it without a console window:  pythonw.exe main.py
 """
 
 import sys
