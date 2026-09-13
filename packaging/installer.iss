@@ -17,7 +17,7 @@
 AppId={{7C1F9A42-5E3D-4C0B-9F2A-6B8D1E4A77C5}
 AppName={#AppName}
 AppVersion={#AppVersion}
-AppPublisher=Monitor Widget
+AppPublisher=Antoine Souesme
 VersionInfoVersion={#AppVersion}
 ; Per user install: no administrator rights, matches the HKCU startup key.
 PrivilegesRequired=lowest
