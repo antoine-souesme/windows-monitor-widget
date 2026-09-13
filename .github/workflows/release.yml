@@ -60,3 +60,18 @@ jobs:
         with:
           files: dist/installer/setup_*.exe
           generate_release_notes: true
+
+  # Opens the pull request on microsoft/winget-pkgs once the release exists.
+  # Needs WINGET_TOKEN: a classic personal access token with the public_repo
+  # scope, owned by the account holding the winget-pkgs fork.
+  winget:
+    needs: installer
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: AntoineSouesme.MonitorWidget
+          installers-regex: '^setup_.*\.exe$'
+          release-tag: ${{ github.ref_name }}
+          token: ${{ secrets.WINGET_TOKEN }}
