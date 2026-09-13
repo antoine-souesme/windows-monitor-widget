@@ -5,6 +5,7 @@ import tkinter as tk
 from collections import deque
 
 from . import config, probes, system
+from .version import __version__
 
 # Palette.
 BACKGROUND = "#1e1f24"
@@ -92,6 +93,9 @@ class WidgetWindow(tk.Toplevel):
         self.probe_var = tk.StringVar(value=self.probe.key)
 
         self.menu = tk.Menu(self, tearoff=0)
+        # Plain caption, so the installed version is visible without a window.
+        self.menu.add_command(label="CPU Widget {}".format(__version__), state="disabled")
+        self.menu.add_separator()
         metrics = tk.Menu(self.menu, tearoff=0)
         for key, cls in probes.PROBES.items():
             metrics.add_radiobutton(label=cls.label, value=key,
