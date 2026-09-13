@@ -133,7 +133,13 @@ def _winreg():
 
 
 def startup_command():
-    """Command line written to the registry: pythonw.exe plus the script."""
+    """Command line written to the registry.
+
+    Once packaged by PyInstaller the executable is self contained; when run
+    from the sources we point at pythonw.exe so no console window appears.
+    """
+    if getattr(sys, "frozen", False):
+        return '"{}"'.format(os.path.abspath(sys.executable))
     directory = os.path.dirname(sys.executable)
     pythonw = os.path.join(directory, "pythonw.exe")
     if not os.path.exists(pythonw):

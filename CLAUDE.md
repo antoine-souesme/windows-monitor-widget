@@ -25,6 +25,20 @@ color scale.
 | `monitor_widget/system.py` | Win32 styles, displays, `HKCU\...\Run`, mutex |
 | `monitor_widget/probes.py` | the measurable metrics |
 | `monitor_widget/ui.py` | window, drawing, dragging, context menu |
+| `monitor_widget/version.py` | single source of truth for the version |
+| `packaging/` | PyInstaller spec and Inno Setup script |
+| `.github/workflows/release.yml` | tag driven build of `setup_<version>.exe` |
+
+## Releasing
+
+Version lives only in `monitor_widget/version.py`. A `v<version>` tag triggers
+the Windows build; the workflow refuses to run when the tag and that file
+disagree. The installer is per user (`%LOCALAPPDATA%\Programs\CpuWidget`,
+no elevation) and upgrades in place, so `AppId` in `installer.iss` must never
+change. Settings stay in `%APPDATA%\CpuWidget` across updates.
+
+Code that resolves paths must handle the frozen case (`sys.frozen`), since
+after packaging there is no `.py` file next to the executable.
 
 ## Adding a metric
 
