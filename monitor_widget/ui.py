@@ -94,7 +94,7 @@ class WidgetWindow(tk.Toplevel):
 
         self.menu = tk.Menu(self, tearoff=0)
         # Plain caption, so the installed version is visible without a window.
-        self.menu.add_command(label="CPU Widget {}".format(__version__), state="disabled")
+        self.menu.add_command(label="Monitor Widget {}".format(__version__), state="disabled")
         self.menu.add_separator()
         metrics = tk.Menu(self.menu, tearoff=0)
         for key, cls in probes.PROBES.items():

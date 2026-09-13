@@ -1,4 +1,4 @@
-# CPU Widget
+# Monitor Widget
 
 A small borderless Windows desktop widget showing the live CPU load: a large
 percentage, a scrolling 60-second graph, and a color going from green to
@@ -8,7 +8,7 @@ orange to red as the load rises.
 
 Download `setup_<version>.exe` from the
 [releases](../../releases) and run it. No administrator rights needed: it
-installs into `%LOCALAPPDATA%\Programs\CpuWidget` for the current user.
+installs into `%LOCALAPPDATA%\Programs\MonitorWidget` for the current user.
 Running a newer installer over an existing copy updates it in place and keeps
 the settings.
 
@@ -16,7 +16,7 @@ the settings.
 
 ```
 pip install -r requirements.txt
-pythonw.exe cpu_widget.py
+pythonw.exe main.py
 ```
 
 Python 3.8 or later, on Windows.
@@ -26,20 +26,20 @@ Python 3.8 or later, on Windows.
   top, quit.
 
 Position, size, the "always on top" option and the selected metric are stored
-in `%APPDATA%\CpuWidget\config.json`.
+in `%APPDATA%\MonitorWidget\config.json`.
 
 ## Uninstall
 
-Use *Add or remove programs*, entry **CPU Widget**. It closes the widget and
+Use *Add or remove programs*, entry **Monitor Widget**. It closes the widget and
 removes the auto start entry.
 
 When it was run from the sources instead, remove the entry by hand:
 
 ```
-reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v CpuWidget /f
+reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v MonitorWidget /f
 ```
 
-Deleting the folder `%APPDATA%\CpuWidget` removes the saved settings.
+Deleting the folder `%APPDATA%\MonitorWidget` removes the saved settings.
 
 ## Releasing
 
@@ -70,12 +70,12 @@ class DiskProbe(Probe):
 
 | File | Role |
 | --- | --- |
-| `cpu_widget.py` | entry point: single instance, hidden root window |
+| `main.py` | entry point: single instance, hidden root window |
 | `monitor_widget/config.py` | reading and writing `config.json` |
 | `monitor_widget/system.py` | Win32 styles, displays, registry, mutex |
 | `monitor_widget/probes.py` | the measurable metrics |
 | `monitor_widget/ui.py` | window, drawing, dragging, context menu |
 | `monitor_widget/version.py` | version number, checked against the release tag |
-| `packaging/cpu_widget.spec` | PyInstaller recipe |
+| `packaging/monitor_widget.spec` | PyInstaller recipe |
 | `packaging/installer.iss` | Inno Setup script producing `setup_<version>.exe` |
 | `.github/workflows/release.yml` | builds and publishes the installer on a tag |

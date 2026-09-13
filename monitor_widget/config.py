@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Reading and writing the configuration file.
 
-Location: %APPDATA%\\CpuWidget\\config.json (or ~/.config/CpuWidget outside
-Windows, so the code can be run elsewhere without crashing).
+Location: %APPDATA%\\MonitorWidget\\config.json (or ~/.config/MonitorWidget
+outside Windows, so the code can be run elsewhere without crashing).
 A missing or corrupted configuration simply falls back to the defaults: the
 widget must never refuse to start because of it.
 """
@@ -10,7 +10,9 @@ widget must never refuse to start because of it.
 import json
 import os
 
-APP_NAME = "CpuWidget"
+APP_NAME = "MonitorWidget"
+# Folder used before the rename: read once so settings survive an update.
+LEGACY_APP_NAME = "CpuWidget"
 
 # Values used on first launch, or when the file cannot be used.
 DEFAULTS = {
@@ -35,11 +37,22 @@ def config_path():
     return os.path.join(config_dir(), "config.json")
 
 
+def _legacy_config_path():
+    """Path of the file written by the versions named CPU Widget."""
+    base = os.environ.get("APPDATA")
+    if not base:
+        base = os.path.join(os.path.expanduser("~"), ".config")
+    return os.path.join(base, LEGACY_APP_NAME, "config.json")
+
+
 def load():
     """Return the stored configuration, completed with the defaults."""
     values = dict(DEFAULTS)
+    path = config_path()
+    if not os.path.exists(path):
+        path = _legacy_config_path()
     try:
-        with open(config_path(), "r", encoding="utf-8") as handle:
+        with open(path, "r", encoding="utf-8") as handle:
             stored = json.load(handle)
         if isinstance(stored, dict):
             # Only known keys are kept, and only when the type matches.

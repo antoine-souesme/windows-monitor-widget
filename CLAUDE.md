@@ -1,4 +1,4 @@
-# CPU Widget
+# Monitor Widget
 
 Borderless Windows desktop widget (Python 3 + tkinter + psutil) showing one
 live system metric: large percentage, 60-second scrolling graph, green to red
@@ -20,8 +20,8 @@ color scale.
 
 | File | Role |
 | --- | --- |
-| `cpu_widget.py` | entry point: single instance, hidden root window |
-| `monitor_widget/config.py` | `%APPDATA%\CpuWidget\config.json` read/write |
+| `main.py` | entry point: single instance, hidden root window |
+| `monitor_widget/config.py` | `%APPDATA%\MonitorWidget\config.json` read/write |
 | `monitor_widget/system.py` | Win32 styles, displays, `HKCU\...\Run`, mutex |
 | `monitor_widget/probes.py` | the measurable metrics |
 | `monitor_widget/ui.py` | window, drawing, dragging, context menu |
@@ -33,9 +33,9 @@ color scale.
 
 Version lives only in `monitor_widget/version.py`. A `v<version>` tag triggers
 the Windows build; the workflow refuses to run when the tag and that file
-disagree. The installer is per user (`%LOCALAPPDATA%\Programs\CpuWidget`,
+disagree. The installer is per user (`%LOCALAPPDATA%\Programs\MonitorWidget`,
 no elevation) and upgrades in place, so `AppId` in `installer.iss` must never
-change. Settings stay in `%APPDATA%\CpuWidget` across updates.
+change. Settings stay in `%APPDATA%\MonitorWidget` across updates.
 
 Code that resolves paths must handle the frozen case (`sys.frozen`), since
 after packaging there is no `.py` file next to the executable.
@@ -50,7 +50,7 @@ metric specific code to `ui.py`.
 
 ```
 pip install -r requirements.txt
-pythonw.exe cpu_widget.py          # Windows, no console
+pythonw.exe main.py          # Windows, no console
 ```
 
 Outside Windows the window still opens (without transparency, tool window

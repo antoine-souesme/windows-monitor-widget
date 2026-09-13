@@ -38,7 +38,7 @@ jobs:
           "value=$file" >> $env:GITHUB_OUTPUT
 
       - name: Build the executable
-        run: pyinstaller --noconfirm --clean packaging/cpu_widget.spec
+        run: pyinstaller --noconfirm --clean packaging/monitor_widget.spec
 
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y

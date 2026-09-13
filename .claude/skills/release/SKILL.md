@@ -1,9 +1,9 @@
 ---
 name: release
-description: Use when the user asks to release CPU Widget, publish a new version, ship a new installer, or bump the version number of this project
+description: Use when the user asks to release Monitor Widget, publish a new version, ship a new installer, or bump the version number of this project
 ---
 
-# Release CPU Widget
+# Release Monitor Widget
 
 Publie une nouvelle version du widget en passant par `main`, puis remet
 `develop` à jour. Le tag poussé déclenche la construction de
@@ -22,7 +22,7 @@ Refuser et prévenir l'utilisateur si l'une de ces conditions est vraie :
 - l'arbre de travail n'est pas propre (`git status --porcelain` renvoie du texte)
 - la version demandée n'est pas supérieure à celle de `monitor_widget/version.py`
 - le tag `vX.Y.Z` existe déjà (`git tag -l` et `git ls-remote --tags origin`)
-- `python -m compileall -q cpu_widget.py monitor_widget` échoue
+- `python -m compileall -q main.py monitor_widget` échoue
 - `python -c "import monitor_widget.config, monitor_widget.probes, monitor_widget.system"`
   échoue (dépendances manquantes : prévenir plutôt que d'installer quoi que ce soit)
 
