@@ -1,7 +1,8 @@
 name: Release
 
 # A tag v1.2.0 builds setup_1.2.0.exe on a Windows runner and attaches it to
-# the GitHub release. Manual runs build the installer as an artifact only.
+# the GitHub release. A manual run builds the same installer and leaves it as
+# a downloadable artifact, so a version can be tried before it is tagged.
 on:
   push:
     tags:
@@ -51,7 +52,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: setup_${{ steps.version.outputs.value }}
+          # The run number keeps the successive builds of a branch apart.
+          name: setup_${{ steps.version.outputs.value }}_build${{ github.run_number }}
           path: dist/installer/setup_*.exe
 
       - name: Publish the release

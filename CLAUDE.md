@@ -26,13 +26,18 @@ color scale.
 | `monitor_widget/probes.py` | the measurable metrics |
 | `monitor_widget/ui.py` | window, drawing, dragging, context menu |
 | `monitor_widget/version.py` | single source of truth for the version |
+| `tests/` | configuration and layout tests (no display needed) |
 | `packaging/` | PyInstaller spec and Inno Setup script |
-| `.github/workflows/release.yml` | tag driven build of `setup_<version>.exe` |
+| `.github/workflows/tests.yml` | runs the tests on every pull request |
+| `.github/workflows/release.yml` | builds `setup_<version>.exe`: artifact on a manual run, release on a tag |
 
 ## Releasing
 
+Running the release workflow by hand builds the installer and leaves it as an
+artifact of the run, so a version can be tried before it is tagged.
+
 Version lives only in `monitor_widget/version.py`. A `v<version>` tag triggers
-the Windows build; the workflow refuses to run when the tag and that file
+the same build and publishes it; the workflow refuses to run when the tag and that file
 disagree. The installer is per user (`%LOCALAPPDATA%\Programs\MonitorWidget`,
 no elevation) and upgrades in place, so `AppId` in `installer.iss` must never
 change. Settings stay in `%APPDATA%\MonitorWidget` across updates.
@@ -51,6 +56,7 @@ metric specific code to `ui.py`.
 ```
 pip install -r requirements.txt
 pythonw.exe main.py          # Windows, no console
+python -m unittest discover -s tests
 ```
 
 Outside Windows the window still opens (without transparency, tool window

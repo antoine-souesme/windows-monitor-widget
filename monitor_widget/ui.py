@@ -20,6 +20,22 @@ SCALE = [(0.0, (0x4c, 0xaf, 0x50)),   # green
 HISTORY_POINTS = 60      # 60 seconds of history
 REFRESH_MS = 1000        # one sample per second
 MARGIN = 12
+PADDING = 10             # empty space above the first block and below the last
+BLOCK_HEIGHT = 70        # one metric: caption, large number, graph
+BLOCK_GAP = 10
+COMPACT_HEIGHT = 26      # one metric on a single line, graph behind it
+COMPACT_GAP = 6
+EMPTY_HEIGHT = 60        # height used when no metric is selected
+EMPTY_TEXT = "Veuillez sélectionner une métrique à afficher"
+
+
+def window_height(count, compact):
+    """Height needed to stack `count` metric blocks."""
+    if count < 1:
+        return EMPTY_HEIGHT
+    block = COMPACT_HEIGHT if compact else BLOCK_HEIGHT
+    gap = COMPACT_GAP if compact else BLOCK_GAP
+    return 2 * PADDING + count * block + (count - 1) * gap
 
 
 def load_color(ratio):
@@ -42,9 +58,9 @@ class WidgetWindow(tk.Toplevel):
     def __init__(self, root, values):
         super().__init__(root)
         self.values = values
-        self.probe = probes.get(values["probe"])
-        self.probe.start()
-        self.history = deque([0.0] * HISTORY_POINTS, maxlen=HISTORY_POINTS)
+        self.probes = []
+        self.histories = {}
+        self._apply_selection(values["probes"])
         self._drag_origin = None
         self._dragged = False
         self._job = None
@@ -53,7 +69,7 @@ class WidgetWindow(tk.Toplevel):
         self._build_canvas()
         self._build_menu()
         self._restore_position()
-        self._draw(0.0)
+        self._draw()
         self._schedule_sample()
 
     # ------------------------------------------------------------------
@@ -79,7 +95,7 @@ class WidgetWindow(tk.Toplevel):
         self.canvas = tk.Canvas(self, highlightthickness=0, bd=0,
                                 bg=self._canvas_background,
                                 width=self.values["width"],
-                                height=self.values["height"])
+                                height=self._height())
         self.canvas.pack(fill="both", expand=True)
         # Drag anywhere on the surface.
         self.canvas.bind("<Button-1>", self._start_drag)
@@ -90,7 +106,10 @@ class WidgetWindow(tk.Toplevel):
     def _build_menu(self):
         self.startup_var = tk.BooleanVar(value=system.is_startup_enabled())
         self.on_top_var = tk.BooleanVar(value=self.values["always_on_top"])
-        self.probe_var = tk.StringVar(value=self.probe.key)
+        self.compact_var = tk.BooleanVar(value=self.values["compact"])
+        selected = [probe.key for probe in self.probes]
+        self.probe_vars = {key: tk.BooleanVar(value=key in selected)
+                           for key in probes.PROBES}
 
         self.menu = tk.Menu(self, tearoff=0)
         # Plain caption, so the installed version is visible without a window.
@@ -98,11 +117,14 @@ class WidgetWindow(tk.Toplevel):
         self.menu.add_separator()
         metrics = tk.Menu(self.menu, tearoff=0)
         for key, cls in probes.PROBES.items():
-            metrics.add_radiobutton(label=cls.label, value=key,
-                                    variable=self.probe_var,
-                                    command=self._change_probe)
+            metrics.add_checkbutton(label=cls.label,
+                                    variable=self.probe_vars[key],
+                                    command=self._change_probes)
         self.menu.add_cascade(label="Données affichées", menu=metrics)
         self.menu.add_separator()
+        self.menu.add_checkbutton(label="Mode compact",
+                                  variable=self.compact_var,
+                                  command=self._toggle_compact)
         self.menu.add_checkbutton(label="Lancer au démarrage",
                                   variable=self.startup_var,
                                   command=self._toggle_startup)
@@ -114,7 +136,7 @@ class WidgetWindow(tk.Toplevel):
 
     def _restore_position(self):
         """Restore the saved position, or recenter when it is off screen."""
-        width, height = self.values["width"], self.values["height"]
+        width, height = self.values["width"], self._height()
         x, y = self.values["x"], self.values["y"]
         on_screen = (x is not None and y is not None
                      and system.is_point_on_screen(x + width // 2, y + height // 2, self)
@@ -133,30 +155,72 @@ class WidgetWindow(tk.Toplevel):
         self._job = self.after(REFRESH_MS, self._sample)
 
     def _sample(self):
-        try:
-            value = float(self.probe.read())
-        except Exception:
-            value = 0.0
-        self.history.append(value)
-        self._draw(value)
+        for probe in self.probes:
+            try:
+                value = float(probe.read())
+            except Exception:
+                value = 0.0
+            self.histories[probe.key].append(value)
+        self._draw()
         self._schedule_sample()
 
-    def _draw(self, value):
-        width, height = self.values["width"], self.values["height"]
-        color = load_color(self.probe.ratio(value))
+    def _draw(self):
+        width, height = self.values["width"], self._height()
         self.canvas.delete("all")
         self._rounded_rectangle(1, 1, width - 1, height - 1, 12,
                                 fill=BACKGROUND, outline=BORDER)
-        self.canvas.create_text(MARGIN, 16, anchor="w", text=self.probe.label,
-                                fill=CAPTION, font=("Segoe UI", 9))
-        self.canvas.create_text(MARGIN, 40, anchor="w", text=self.probe.format(value),
-                                fill=TEXT, font=("Segoe UI", 22, "bold"))
-        self._draw_graph(MARGIN, height - 32, width - MARGIN, height - MARGIN, color)
+        if not self.probes:
+            self.canvas.create_text(width // 2, height // 2, text=EMPTY_TEXT,
+                                    fill=CAPTION, font=("Segoe UI", 9),
+                                    width=width - 2 * MARGIN, justify="center")
+            return
+        compact = self.values["compact"]
+        block = COMPACT_HEIGHT if compact else BLOCK_HEIGHT
+        gap = COMPACT_GAP if compact else BLOCK_GAP
+        top = PADDING
+        for probe in self.probes:
+            if compact:
+                self._draw_compact_block(probe, top, block)
+            else:
+                self._draw_block(probe, top, block)
+            top += block + gap
 
-    def _draw_graph(self, x0, y0, x1, y1, color):
-        """Scrolling graph of the last 60 samples."""
-        self.canvas.create_line(x0, y1, x1, y1, fill=BORDER)
-        samples = list(self.history)
+    def _last(self, probe):
+        """Most recent sample of a metric, 0 before the first one."""
+        history = self.histories[probe.key]
+        return history[-1] if history else 0.0
+
+    def _draw_block(self, probe, top, block):
+        """Caption, large number, then the graph underneath."""
+        width = self.values["width"]
+        value = self._last(probe)
+        color = load_color(probe.ratio(value))
+        self.canvas.create_text(MARGIN, top + 6, anchor="w", text=probe.label,
+                                fill=CAPTION, font=("Segoe UI", 9))
+        self.canvas.create_text(MARGIN, top + 30, anchor="w",
+                                text=probe.format(value),
+                                fill=TEXT, font=("Segoe UI", 22, "bold"))
+        self._draw_graph(probe, MARGIN, top + 44, width - MARGIN, top + block, color)
+
+    def _draw_compact_block(self, probe, top, block):
+        """One line: the graph fills the block, caption and number on top."""
+        width = self.values["width"]
+        value = self._last(probe)
+        color = load_color(probe.ratio(value))
+        self._draw_graph(probe, MARGIN, top, width - MARGIN, top + block, color,
+                         baseline=False)
+        middle = top + block // 2
+        self.canvas.create_text(MARGIN, middle, anchor="w", text=probe.label,
+                                fill=CAPTION, font=("Segoe UI", 9))
+        self.canvas.create_text(width - MARGIN, middle, anchor="e",
+                                text=probe.format(value),
+                                fill=TEXT, font=("Segoe UI", 13, "bold"))
+
+    def _draw_graph(self, probe, x0, y0, x1, y1, color, baseline=True):
+        """Scrolling graph of the last 60 samples of one metric."""
+        if baseline:
+            self.canvas.create_line(x0, y1, x1, y1, fill=BORDER)
+        samples = list(self.histories[probe.key])
         if len(samples) < 2:
             return
         step = (x1 - x0) / float(len(samples) - 1)
@@ -164,7 +228,7 @@ class WidgetWindow(tk.Toplevel):
         points = []
         for index, sample in enumerate(samples):
             points.append(x0 + index * step)
-            points.append(y1 - self.probe.ratio(sample) * span)
+            points.append(y1 - probe.ratio(sample) * span)
         # Shaded area first, then the curve itself.
         self.canvas.create_polygon(points + [x1, y1, x0, y1],
                                    fill=color, outline="", stipple="gray25")
@@ -226,13 +290,50 @@ class WidgetWindow(tk.Toplevel):
         self.attributes("-topmost", self.values["always_on_top"])
         config.save(self.values)
 
-    def _change_probe(self):
-        self.probe = probes.get(self.probe_var.get())
-        self.probe.start()
-        self.history = deque([0.0] * HISTORY_POINTS, maxlen=HISTORY_POINTS)
-        self.values["probe"] = self.probe.key
+    def _change_probes(self):
+        selected = [key for key in probes.PROBES if self.probe_vars[key].get()]
+        self._apply_selection(selected)
+        self.values["probes"] = [probe.key for probe in self.probes]
         config.save(self.values)
-        self._draw(0.0)
+        self._resize()
+
+    def _toggle_compact(self):
+        self.values["compact"] = self.compact_var.get()
+        config.save(self.values)
+        self._resize()
+
+    def _apply_selection(self, keys):
+        """Rebuild the list of probes, keeping the history of those already
+        displayed so switching an unrelated metric does not reset the graphs."""
+        kept = []
+        histories = {}
+        for key in keys:
+            cls = probes.PROBES.get(key)
+            if cls is None or key in histories:
+                continue
+            probe = next((p for p in self.probes if p.key == key), None)
+            if probe is None:
+                probe = cls()
+                probe.start()
+            kept.append(probe)
+            histories[key] = self.histories.get(
+                key, deque([0.0] * HISTORY_POINTS, maxlen=HISTORY_POINTS))
+        self.probes = kept
+        self.histories = histories
+
+    def _height(self):
+        return window_height(len(self.probes), self.values["compact"])
+
+    def _resize(self):
+        """Give the window the height its content needs, then redraw."""
+        height = self._height()
+        self.canvas.configure(height=height)
+        if self.winfo_ismapped():
+            # Keep the top left corner where the user left it.
+            self.values["x"], self.values["y"] = self.winfo_x(), self.winfo_y()
+        self.geometry("{}x{}+{}+{}".format(self.values["width"], height,
+                                           self.values["x"], self.values["y"]))
+        self._draw()
 
     # ------------------------------------------------------------------
     # Shutdown
