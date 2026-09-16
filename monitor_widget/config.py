@@ -22,6 +22,8 @@ DEFAULTS = {
     "always_on_top": True,
     "probes": ["cpu"],      # keys of the displayed metrics (see probes.py)
     "compact": False,       # one line per metric, graph drawn behind it
+    "check_updates": True,  # look for a newer release on GitHub
+    "last_update_check": 0.0,   # epoch seconds of the last look (0 = never)
 }
 
 
@@ -60,7 +62,9 @@ def load():
                 if key not in stored:
                     continue
                 value = stored[key]
-                if default is None or value is None or isinstance(value, type(default)):
+                # A date written without decimals stays a valid date.
+                expected = (float, int) if isinstance(default, float) else type(default)
+                if default is None or value is None or isinstance(value, expected):
                     values[key] = value
             # Versions up to 1.0.2 stored a single metric under "probe".
             if "probes" not in stored and isinstance(stored.get("probe"), str):
@@ -84,6 +88,11 @@ def _sanitize(values):
             values[key] = None
     values["always_on_top"] = bool(values.get("always_on_top", True))
     values["compact"] = bool(values.get("compact", False))
+    values["check_updates"] = bool(values.get("check_updates", True))
+    try:
+        values["last_update_check"] = float(values.get("last_update_check", 0.0))
+    except (TypeError, ValueError):
+        values["last_update_check"] = 0.0
     selected = values.get("probes")
     if not isinstance(selected, list):
         selected = list(DEFAULTS["probes"])
