@@ -28,12 +28,15 @@ color scale.
 | `monitor_widget/version.py` | single source of truth for the version |
 | `tests/` | configuration and layout tests (no display needed) |
 | `packaging/` | PyInstaller spec and Inno Setup script |
-| `.github/workflows/release.yml` | tag driven build of `setup_<version>.exe` |
+| `.github/workflows/release.yml` | builds `setup_<version>.exe`: artifact on every pull request, release on a tag |
 
 ## Releasing
 
+Every pull request runs the tests and builds the installer, downloadable from
+the run as an artifact, so a version can be tried before it is tagged.
+
 Version lives only in `monitor_widget/version.py`. A `v<version>` tag triggers
-the Windows build; the workflow refuses to run when the tag and that file
+the same build and publishes it; the workflow refuses to run when the tag and that file
 disagree. The installer is per user (`%LOCALAPPDATA%\Programs\MonitorWidget`,
 no elevation) and upgrades in place, so `AppId` in `installer.iss` must never
 change. Settings stay in `%APPDATA%\MonitorWidget` across updates.
