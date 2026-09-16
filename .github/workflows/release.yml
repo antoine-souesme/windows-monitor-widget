@@ -1,36 +1,19 @@
-name: Build
+name: Release
 
 # A tag v1.2.0 builds setup_1.2.0.exe on a Windows runner and attaches it to
-# the GitHub release. Pull requests and manual runs build the same installer
-# and leave it as a downloadable artifact, so it can be tried before a tag.
+# the GitHub release. A manual run builds the same installer and leaves it as
+# a downloadable artifact, so a version can be tried before it is tagged.
 on:
   push:
     tags:
       - "v*"
-  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Run the tests
-        run: python -m unittest discover -s tests
-
   installer:
-    needs: tests
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4

@@ -28,12 +28,13 @@ color scale.
 | `monitor_widget/version.py` | single source of truth for the version |
 | `tests/` | configuration and layout tests (no display needed) |
 | `packaging/` | PyInstaller spec and Inno Setup script |
-| `.github/workflows/release.yml` | builds `setup_<version>.exe`: artifact on every pull request, release on a tag |
+| `.github/workflows/tests.yml` | runs the tests on every pull request |
+| `.github/workflows/release.yml` | builds `setup_<version>.exe`: artifact on a manual run, release on a tag |
 
 ## Releasing
 
-Every pull request runs the tests and builds the installer, downloadable from
-the run as an artifact, so a version can be tried before it is tagged.
+Running the release workflow by hand builds the installer and leaves it as an
+artifact of the run, so a version can be tried before it is tagged.
 
 Version lives only in `monitor_widget/version.py`. A `v<version>` tag triggers
 the same build and publishes it; the workflow refuses to run when the tag and that file
