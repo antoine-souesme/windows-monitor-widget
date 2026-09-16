@@ -24,6 +24,7 @@ color scale.
 | `monitor_widget/config.py` | `%APPDATA%\MonitorWidget\config.json` read/write |
 | `monitor_widget/system.py` | Win32 styles, displays, `HKCU\...\Run`, mutex |
 | `monitor_widget/probes.py` | the measurable metrics |
+| `monitor_widget/updater.py` | the only network code: looks for a newer release, installs it |
 | `monitor_widget/ui.py` | window, drawing, dragging, context menu |
 | `monitor_widget/version.py` | single source of truth for the version |
 | `tests/` | configuration and layout tests (no display needed) |
@@ -44,6 +45,14 @@ change. Settings stay in `%APPDATA%\MonitorWidget` across updates.
 
 Code that resolves paths must handle the frozen case (`sys.frozen`), since
 after packaging there is no `.py` file next to the executable.
+
+## Updating
+
+The widget asks GitHub for the latest release half a minute after it starts,
+then once a day, on a background thread. A newer version adds a menu entry and
+a colored dot; nothing is downloaded before the user clicks it. The installer
+is fetched to the temporary folder and started silently, which replaces the
+running copy and relaunches it. The check can be turned off from the menu.
 
 ## Adding a metric
 
