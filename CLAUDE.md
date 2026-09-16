@@ -26,6 +26,7 @@ color scale.
 | `monitor_widget/probes.py` | the measurable metrics |
 | `monitor_widget/ui.py` | window, drawing, dragging, context menu |
 | `monitor_widget/version.py` | single source of truth for the version |
+| `tests/` | configuration and layout tests (no display needed) |
 | `packaging/` | PyInstaller spec and Inno Setup script |
 | `.github/workflows/release.yml` | tag driven build of `setup_<version>.exe` |
 
@@ -51,6 +52,7 @@ metric specific code to `ui.py`.
 ```
 pip install -r requirements.txt
 pythonw.exe main.py          # Windows, no console
+python -m unittest discover -s tests
 ```
 
 Outside Windows the window still opens (without transparency, tool window

@@ -19,9 +19,9 @@ DEFAULTS = {
     "x": None,              # left position in pixels (None = center)
     "y": None,              # top position in pixels
     "width": 200,
-    "height": 90,
     "always_on_top": True,
-    "probe": "cpu",         # key of the displayed metric (see probes.py)
+    "probes": ["cpu"],      # keys of the displayed metrics (see probes.py)
+    "compact": False,       # one line per metric, graph drawn behind it
 }
 
 
@@ -62,6 +62,9 @@ def load():
                 value = stored[key]
                 if default is None or value is None or isinstance(value, type(default)):
                     values[key] = value
+            # Versions up to 1.0.2 stored a single metric under "probe".
+            if "probes" not in stored and isinstance(stored.get("probe"), str):
+                values["probes"] = [stored["probe"]]
     except (OSError, ValueError, TypeError):
         # Missing file, unreadable file or broken JSON: keep the defaults.
         pass
@@ -72,18 +75,24 @@ def _sanitize(values):
     """Bring out-of-range values back into sane bounds."""
     try:
         values["width"] = max(140, min(int(values["width"]), 600))
-        values["height"] = max(70, min(int(values["height"]), 400))
     except (TypeError, ValueError):
         values["width"] = DEFAULTS["width"]
-        values["height"] = DEFAULTS["height"]
     for key in ("x", "y"):
         try:
             values[key] = None if values[key] is None else int(values[key])
         except (TypeError, ValueError):
             values[key] = None
     values["always_on_top"] = bool(values.get("always_on_top", True))
-    if not isinstance(values.get("probe"), str):
-        values["probe"] = DEFAULTS["probe"]
+    values["compact"] = bool(values.get("compact", False))
+    selected = values.get("probes")
+    if not isinstance(selected, list):
+        selected = list(DEFAULTS["probes"])
+    # Keep the order, drop what cannot be a metric key and the repetitions.
+    kept = []
+    for key in selected:
+        if isinstance(key, str) and key not in kept:
+            kept.append(key)
+    values["probes"] = kept
     return values
 
 
