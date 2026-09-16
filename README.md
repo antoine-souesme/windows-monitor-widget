@@ -1,8 +1,10 @@
 # Monitor Widget
 
-A small borderless Windows desktop widget showing the live CPU load: a large
+A small borderless Windows desktop widget showing live system metrics: a large
 percentage, a scrolling 60-second graph, and a color going from green to
-orange to red as the load rises.
+orange to red as the load rises. Tick as many metrics as you like and they
+stack from top to bottom; a compact mode puts each one on a single line with
+its graph drawn behind it.
 
 ## Install
 
@@ -22,11 +24,12 @@ pythonw.exe main.py
 Python 3.8 or later, on Windows.
 
 - Drag it anywhere with the left mouse button.
-- Right click for the menu: displayed metric, start with Windows, always on
-  top, quit.
+- Right click for the menu: displayed metrics (check boxes), compact mode,
+  start with Windows, always on top, quit.
 
-Position, size, the "always on top" option and the selected metric are stored
-in `%APPDATA%\MonitorWidget\config.json`.
+Position, width, the "always on top" and "compact" options and the selected
+metrics are stored in `%APPDATA%\MonitorWidget\config.json`. The height
+follows the number of metrics shown.
 
 ## Uninstall
 

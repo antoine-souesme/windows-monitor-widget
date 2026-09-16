@@ -72,9 +72,3 @@ class MemoryProbe(Probe):
 
     def read(self):
         return psutil.virtual_memory().percent
-
-
-def get(key):
-    """Return an instance of the requested probe, or the CPU one."""
-    cls = PROBES.get(key) or PROBES["cpu"]
-    return cls()
