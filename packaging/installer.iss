@@ -65,6 +65,9 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
 [Run]
 Filename: "{app}\{#ExeName}"; Description: "Lancer Monitor Widget"; \
     Flags: nowait postinstall skipifsilent
+; Silent run: the update started by the widget itself, which was killed above.
+; Nothing else would bring it back, so it is relaunched here.
+Filename: "{app}\{#ExeName}"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [Code]
 procedure StopRunningWidget();
