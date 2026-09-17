@@ -88,6 +88,23 @@ class ConfigTest(unittest.TestCase):
         self.write({"last_update_check": "hier"})
         self.assertEqual(config.load()["last_update_check"], 0.0)
 
+    def test_metric_options_have_their_default(self):
+        values = config.load()
+        self.assertEqual(values["ram_display"], "percent")
+        self.assertEqual(values["network_display"], "both")
+
+    def test_metric_options_are_read(self):
+        self.write({"ram_display": "value", "network_display": "upload"})
+        values = config.load()
+        self.assertEqual(values["ram_display"], "value")
+        self.assertEqual(values["network_display"], "upload")
+
+    def test_unknown_option_falls_back_to_the_default(self):
+        self.write({"ram_display": "octets", "network_display": 3})
+        values = config.load()
+        self.assertEqual(values["ram_display"], "percent")
+        self.assertEqual(values["network_display"], "both")
+
     def test_save_then_load(self):
         values = config.load()
         values["probes"] = ["ram"]

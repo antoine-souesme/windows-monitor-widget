@@ -10,6 +10,8 @@ widget must never refuse to start because of it.
 import json
 import os
 
+from . import probes
+
 APP_NAME = "MonitorWidget"
 # Folder used before the rename: read once so settings survive an update.
 LEGACY_APP_NAME = "CpuWidget"
@@ -25,6 +27,8 @@ DEFAULTS = {
     "check_updates": True,  # look for a newer release on GitHub
     "last_update_check": 0.0,   # epoch seconds of the last look (0 = never)
 }
+# Every metric adds its own choices here (see probes.Option).
+DEFAULTS.update(probes.option_defaults())
 
 
 def config_dir():
@@ -93,6 +97,11 @@ def _sanitize(values):
         values["last_update_check"] = float(values.get("last_update_check", 0.0))
     except (TypeError, ValueError):
         values["last_update_check"] = 0.0
+    # A choice that no longer exists falls back to the default of its metric.
+    for cls in probes.options():
+        for option in cls.options:
+            if values.get(option.key) not in option.values():
+                values[option.key] = option.default
     selected = values.get("probes")
     if not isinstance(selected, list):
         selected = list(DEFAULTS["probes"])
