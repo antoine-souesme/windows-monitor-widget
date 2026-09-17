@@ -28,5 +28,18 @@ class WindowHeightTest(unittest.TestCase):
         self.assertEqual(ui.window_height(0, True), ui.EMPTY_HEIGHT)
 
 
+class ColumnTest(unittest.TestCase):
+
+    def test_one_value_takes_the_whole_width(self):
+        self.assertEqual(ui.columns(10, 190, 1), [(10, 190)])
+
+    def test_two_values_share_it_with_a_gap(self):
+        left, right = ui.columns(10, 190, 2)
+        self.assertEqual(left[0], 10)
+        self.assertEqual(right[1], 190)
+        self.assertEqual(right[0] - left[1], ui.COLUMN_GAP)
+        self.assertEqual(left[1] - left[0], right[1] - right[0])
+
+
 if __name__ == "__main__":
     unittest.main()
