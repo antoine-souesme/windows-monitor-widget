@@ -31,10 +31,13 @@ COMPACT_GAP = 6
 COLUMN_GAP = 10          # empty space between two values of the same metric
 BLOCK_SIZES = [22, 18, 15, 12, 10]    # font sizes tried for the large number
 COMPACT_SIZES = [13, 11, 10, 9]
+PREFIX_SIZE = 13         # the mark before a number, never resized with it
+COMPACT_PREFIX_SIZE = 10
+PREFIX_GAP = 5           # empty space between that mark and the number
 EMPTY_HEIGHT = 60        # height used when no metric is selected
 EMPTY_TEXT = "Veuillez sélectionner une métrique à afficher"
 UPDATE_COLOR = "#4caf50"   # the dot shown when a new version is available
-UPDATE_DOT = 5             # its radius
+UPDATE_DOT = 4             # its radius
 UPDATE_DELAY_MS = 30000    # time left to the widget to settle before checking
 UPDATE_POLL_MS = 3600000   # how often the daily deadline is looked at again
 
@@ -51,19 +54,32 @@ def window_height(count, compact):
 _FONTS = {}
 
 
+def _bold(size):
+    """Bold font of that size, created once."""
+    font = _FONTS.get(size)
+    if font is None:
+        font = _FONTS[size] = tkfont.Font(family="Segoe UI", size=size,
+                                          weight="bold")
+    return font
+
+
 def fitting_font(text, width, sizes):
     """Largest of `sizes` writing `text` within `width` pixels."""
     for size in sizes:
-        font = _FONTS.get(size)
-        if font is None:
-            font = _FONTS[size] = tkfont.Font(family="Segoe UI", size=size,
-                                              weight="bold")
         try:
-            if font.measure(text) <= width:
+            if _bold(size).measure(text) <= width:
                 return ("Segoe UI", size, "bold")
         except tk.TclError:
             break
     return ("Segoe UI", sizes[-1], "bold")
+
+
+def text_width(text, font):
+    """Width of a text in pixels, 0 when nothing can be measured."""
+    try:
+        return _bold(font[1]).measure(text)
+    except tk.TclError:
+        return 0
 
 
 def columns(left, right, count):
@@ -296,10 +312,16 @@ class WidgetWindow(tk.Toplevel):
                                 fill=CAPTION, font=("Segoe UI", 9))
         areas = columns(MARGIN, width - MARGIN, len(values))
         for index, (x0, x1) in enumerate(areas):
-            self.canvas.create_text(x0, top + 30, anchor="w", text=texts[index],
-                                    fill=TEXT,
-                                    font=fitting_font(texts[index], x1 - x0,
-                                                      BLOCK_SIZES))
+            prefix, prefix_font, font = self._fonts(probe, index, texts[index],
+                                                    x1 - x0, BLOCK_SIZES,
+                                                    PREFIX_SIZE)
+            x = x0
+            if prefix:
+                self.canvas.create_text(x, top + 30, anchor="w", text=prefix,
+                                        fill=TEXT, font=prefix_font)
+                x += text_width(prefix, prefix_font) + PREFIX_GAP
+            self.canvas.create_text(x, top + 30, anchor="w", text=texts[index],
+                                    fill=TEXT, font=font)
             self._draw_graph(probe, index, x0, top + 44, x1, top + block,
                              self._color(probe, values[index], index))
 
@@ -319,10 +341,43 @@ class WidgetWindow(tk.Toplevel):
             self._draw_graph(probe, index, x0, top, x1, top + block,
                              self._color(probe, values[index], index),
                              baseline=False)
+            prefix, prefix_font, font = self._fonts(probe, index, texts[index],
+                                                    x1 - x0, COMPACT_SIZES,
+                                                    COMPACT_PREFIX_SIZE)
             self.canvas.create_text(x1, middle, anchor="e", text=texts[index],
-                                    fill=TEXT,
-                                    font=fitting_font(texts[index], x1 - x0,
-                                                      COMPACT_SIZES))
+                                    fill=TEXT, font=font)
+            if prefix:
+                # Placed on the room the widest number needs, not on the
+                # current one, so it does not walk as the figure changes.
+                x = x1 - text_width(self._template(probe, texts[index]), font)
+                self.canvas.create_text(x - PREFIX_GAP, middle, anchor="e",
+                                        text=prefix, fill=TEXT,
+                                        font=prefix_font)
+
+    @staticmethod
+    def _template(probe, text):
+        """Widest text the metric can write, the current one if it says
+        nothing. A broken metric must not stop the drawing."""
+        try:
+            return probe.template() or text
+        except Exception:
+            return text
+
+    @classmethod
+    def _fonts(cls, probe, index, text, room, sizes, prefix_size):
+        """Fixed size mark shown before the number, and the font of the
+        number itself, chosen on the widest text so it never resizes."""
+        try:
+            prefixes = probe.prefixes()
+        except Exception:
+            prefixes = []
+        prefix = prefixes[index] if index < len(prefixes) else None
+        prefix_font = None
+        if prefix:
+            prefix_font = ("Segoe UI", prefix_size, "bold")
+            room -= text_width(prefix, prefix_font) + PREFIX_GAP
+        return prefix, prefix_font, fitting_font(cls._template(probe, text),
+                                                 room, sizes)
 
     def _color(self, probe, value, column):
         """Color of one column: the metric decides, or the green to red scale."""

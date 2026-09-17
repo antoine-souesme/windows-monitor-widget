@@ -30,6 +30,12 @@ class MemoryTextTest(unittest.TestCase):
     def test_both(self):
         self.assertEqual(self.probe("both").texts([62.0]), ["62% · 9/16 Go"])
 
+    def test_the_template_is_never_narrower_than_the_text(self):
+        for display in ("percent", "value", "both"):
+            probe = self.probe(display)
+            self.assertGreaterEqual(len(probe.template()),
+                                    len(probe.texts([62.0])[0]))
+
     def test_unknown_total_falls_back_to_the_percentage(self):
         probe = probes.MemoryProbe()
         probe.configure({"ram_display": "value"})
@@ -49,13 +55,18 @@ class NetworkTest(unittest.TestCase):
     def test_one_direction_takes_the_whole_block(self):
         self.assertEqual(self.probe("upload").columns(), 1)
 
-    def test_the_unit_is_written_once_and_shared(self):
+    def test_both_figures_carry_the_shared_unit(self):
         texts = self.probe().texts((12 * MEGA, 1.5 * MEGA))
-        self.assertEqual(texts, ["↓ 12", "↑ 1,5 Mo/s"])
+        self.assertEqual(texts, ["12 Mo/s", "1,5 Mo/s"])
 
-    def test_the_arrow_follows_the_chosen_direction(self):
-        self.assertEqual(self.probe("upload").texts((0.0,)), ["↑ 0 Ko/s"])
-        self.assertEqual(self.probe("download").texts((0.0,)), ["↓ 0 Ko/s"])
+    def test_the_arrow_is_a_prefix_of_its_own(self):
+        self.assertEqual(self.probe().prefixes(), ["↓", "↑"])
+        self.assertEqual(self.probe("upload").prefixes(), ["↑"])
+        self.assertEqual(self.probe("download").prefixes(), ["↓"])
+        self.assertEqual(self.probe("upload").texts((0.0,)), ["0 Ko/s"])
+
+    def test_the_font_is_measured_on_a_fixed_template(self):
+        self.assertEqual(self.probe().template(), "99,9 Mo/s")
 
     def test_a_quiet_line_stays_flat(self):
         probe = self.probe("download")
