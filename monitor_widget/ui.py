@@ -4,6 +4,7 @@
 import threading
 import time
 import tkinter as tk
+import tkinter.font as tkfont
 from collections import deque
 
 from . import config, probes, system, updater
@@ -27,6 +28,9 @@ BLOCK_HEIGHT = 70        # one metric: caption, large number, graph
 BLOCK_GAP = 10
 COMPACT_HEIGHT = 26      # one metric on a single line, graph behind it
 COMPACT_GAP = 6
+COLUMN_GAP = 10          # empty space between two values of the same metric
+BLOCK_SIZES = [22, 18, 15, 12, 10]    # font sizes tried for the large number
+COMPACT_SIZES = [13, 11, 10, 9]
 EMPTY_HEIGHT = 60        # height used when no metric is selected
 EMPTY_TEXT = "Veuillez sélectionner une métrique à afficher"
 UPDATE_COLOR = "#4caf50"   # the dot shown when a new version is available
@@ -42,6 +46,45 @@ def window_height(count, compact):
     block = COMPACT_HEIGHT if compact else BLOCK_HEIGHT
     gap = COMPACT_GAP if compact else BLOCK_GAP
     return 2 * PADDING + count * block + (count - 1) * gap
+
+
+_FONTS = {}
+
+
+def fitting_font(text, width, sizes):
+    """Largest of `sizes` writing `text` within `width` pixels."""
+    for size in sizes:
+        font = _FONTS.get(size)
+        if font is None:
+            font = _FONTS[size] = tkfont.Font(family="Segoe UI", size=size,
+                                              weight="bold")
+        try:
+            if font.measure(text) <= width:
+                return ("Segoe UI", size, "bold")
+        except tk.TclError:
+            break
+    return ("Segoe UI", sizes[-1], "bold")
+
+
+def columns(left, right, count):
+    """Split a width into `count` side by side areas."""
+    if count < 2:
+        return [(left, right)]
+    span = (right - left - COLUMN_GAP * (count - 1)) / float(count)
+    return [(left + index * (span + COLUMN_GAP),
+             left + index * (span + COLUMN_GAP) + span) for index in range(count)]
+
+
+def _as_values(read):
+    """A metric returns one number, or one per column: normalize to a tuple."""
+    if isinstance(read, (list, tuple)):
+        return tuple(float(value) for value in read) or (0.0,)
+    return (float(read),)
+
+
+def _blank_history(count):
+    """Sixty empty samples, so a new graph starts flat instead of jumping."""
+    return deque([(0.0,) * count] * HISTORY_POINTS, maxlen=HISTORY_POINTS)
 
 
 def load_color(ratio):
@@ -132,7 +175,8 @@ class WidgetWindow(tk.Toplevel):
             metrics.add_checkbutton(label=cls.label,
                                     variable=self.probe_vars[key],
                                     command=self._change_probes)
-        self.menu.add_cascade(label="Données affichées", menu=metrics)
+        self.menu.add_cascade(label="Métriques affichées", menu=metrics)
+        self._build_option_menu()
         self.menu.add_separator()
         self.menu.add_checkbutton(label="Mode compact",
                                   variable=self.compact_var,
@@ -148,6 +192,36 @@ class WidgetWindow(tk.Toplevel):
                                   command=self._toggle_updates)
         self.menu.add_separator()
         self.menu.add_command(label="Quitter", command=self.quit_widget)
+
+    def _build_option_menu(self):
+        """One sub menu per metric offering choices, built from probes.py."""
+        self.option_vars = {}
+        families = probes.options()
+        if not families:
+            return
+        root = tk.Menu(self.menu, tearoff=0)
+        for cls in families:
+            family = tk.Menu(root, tearoff=0)
+            for option in cls.options:
+                variable = tk.StringVar(value=self.values[option.key])
+                self.option_vars[option.key] = variable
+                for value, label in option.choices:
+                    family.add_radiobutton(
+                        label=label, value=value, variable=variable,
+                        command=lambda key=option.key: self._change_option(key))
+            root.add_cascade(label=cls.label, menu=family)
+        self.menu.add_cascade(label="Options des métriques", menu=root)
+
+    def _change_option(self, key):
+        """Store a choice and hand it over to the metrics right away."""
+        self.values[key] = self.option_vars[key].get()
+        config.save(self.values)
+        for probe in self.probes:
+            probe.configure(self.values)
+            # A choice can add or remove a column: start that graph over.
+            if len(self.histories[probe.key][-1]) != probe.columns():
+                self.histories[probe.key] = _blank_history(probe.columns())
+        self._draw()
 
     def _restore_position(self):
         """Restore the saved position, or recenter when it is off screen."""
@@ -172,10 +246,14 @@ class WidgetWindow(tk.Toplevel):
     def _sample(self):
         for probe in self.probes:
             try:
-                value = float(probe.read())
+                values = _as_values(probe.read())
             except Exception:
-                value = 0.0
-            self.histories[probe.key].append(value)
+                values = (0.0,)
+            history = self.histories[probe.key]
+            # An option can change how many values a metric returns.
+            if len(history[-1]) != len(values):
+                history = self.histories[probe.key] = _blank_history(len(values))
+            history.append(values)
         self._draw()
         self._schedule_sample()
 
@@ -204,41 +282,58 @@ class WidgetWindow(tk.Toplevel):
             self._draw_update_dot(width)
 
     def _last(self, probe):
-        """Most recent sample of a metric, 0 before the first one."""
+        """Most recent sample of a metric, zeros before the first one."""
         history = self.histories[probe.key]
-        return history[-1] if history else 0.0
+        return history[-1] if history else (0.0,)
 
     def _draw_block(self, probe, top, block):
-        """Caption, large number, then the graph underneath."""
+        """Caption, large number, then the graph underneath. A metric showing
+        several values gets one number and one graph per column."""
         width = self.values["width"]
-        value = self._last(probe)
-        color = load_color(probe.ratio(value))
+        values = self._last(probe)
+        texts = probe.texts(values)
         self.canvas.create_text(MARGIN, top + 6, anchor="w", text=probe.label,
                                 fill=CAPTION, font=("Segoe UI", 9))
-        self.canvas.create_text(MARGIN, top + 30, anchor="w",
-                                text=probe.format(value),
-                                fill=TEXT, font=("Segoe UI", 22, "bold"))
-        self._draw_graph(probe, MARGIN, top + 44, width - MARGIN, top + block, color)
+        areas = columns(MARGIN, width - MARGIN, len(values))
+        for index, (x0, x1) in enumerate(areas):
+            self.canvas.create_text(x0, top + 30, anchor="w", text=texts[index],
+                                    fill=TEXT,
+                                    font=fitting_font(texts[index], x1 - x0,
+                                                      BLOCK_SIZES))
+            self._draw_graph(probe, index, x0, top + 44, x1, top + block,
+                             self._color(probe, values[index], index))
 
     def _draw_compact_block(self, probe, top, block):
         """One line: the graph fills the block, caption and number on top."""
         width = self.values["width"]
-        value = self._last(probe)
-        color = load_color(probe.ratio(value))
-        self._draw_graph(probe, MARGIN, top, width - MARGIN, top + block, color,
-                         baseline=False)
+        values = self._last(probe)
+        texts = probe.texts(values)
         middle = top + block // 2
-        self.canvas.create_text(MARGIN, middle, anchor="w", text=probe.label,
-                                fill=CAPTION, font=("Segoe UI", 9))
-        self.canvas.create_text(width - MARGIN, middle, anchor="e",
-                                text=probe.format(value),
-                                fill=TEXT, font=("Segoe UI", 13, "bold"))
+        single = len(values) == 1
+        if single:
+            # The caption has room only when one number shares the line.
+            self.canvas.create_text(MARGIN, middle, anchor="w", text=probe.label,
+                                    fill=CAPTION, font=("Segoe UI", 9))
+        areas = columns(MARGIN, width - MARGIN, len(values))
+        for index, (x0, x1) in enumerate(areas):
+            self._draw_graph(probe, index, x0, top, x1, top + block,
+                             self._color(probe, values[index], index),
+                             baseline=False)
+            self.canvas.create_text(x1, middle, anchor="e", text=texts[index],
+                                    fill=TEXT,
+                                    font=fitting_font(texts[index], x1 - x0,
+                                                      COMPACT_SIZES))
 
-    def _draw_graph(self, probe, x0, y0, x1, y1, color, baseline=True):
-        """Scrolling graph of the last 60 samples of one metric."""
+    def _color(self, probe, value, column):
+        """Color of one column: the metric decides, or the green to red scale."""
+        return probe.tint(column) or load_color(probe.ratio(value, column))
+
+    def _draw_graph(self, probe, column, x0, y0, x1, y1, color, baseline=True):
+        """Scrolling graph of the last 60 samples of one column."""
         if baseline:
             self.canvas.create_line(x0, y1, x1, y1, fill=BORDER)
-        samples = list(self.histories[probe.key])
+        samples = [sample[column] for sample in self.histories[probe.key]
+                   if column < len(sample)]
         if len(samples) < 2:
             return
         step = (x1 - x0) / float(len(samples) - 1)
@@ -246,7 +341,7 @@ class WidgetWindow(tk.Toplevel):
         points = []
         for index, sample in enumerate(samples):
             points.append(x0 + index * step)
-            points.append(y1 - probe.ratio(sample) * span)
+            points.append(y1 - probe.ratio(sample, column) * span)
         # Shaded area first, then the curve itself.
         self.canvas.create_polygon(points + [x1, y1, x0, y1],
                                    fill=color, outline="", stipple="gray25")
@@ -338,10 +433,11 @@ class WidgetWindow(tk.Toplevel):
             probe = next((p for p in self.probes if p.key == key), None)
             if probe is None:
                 probe = cls()
+                probe.configure(self.values)
                 probe.start()
             kept.append(probe)
             histories[key] = self.histories.get(
-                key, deque([0.0] * HISTORY_POINTS, maxlen=HISTORY_POINTS))
+                key, _blank_history(probe.columns()))
         self.probes = kept
         self.histories = histories
 

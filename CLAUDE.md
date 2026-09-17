@@ -60,6 +60,12 @@ Subclass `Probe` in `probes.py` with a `key`, a `label` and `read()`, decorate
 it with `@register`. It appears in the context menu automatically. Do not add
 metric specific code to `ui.py`.
 
+A metric can declare `options`: they show up under "Options des métriques",
+their default lands in the configuration file on its own, and the answer comes
+back through `configure()`. A metric can also draw several values side by side
+by returning a tuple from `read()` and saying how many with `columns()`;
+`texts()` gives the text of each one and `tint()` its color.
+
 ## Run and check
 
 ```
