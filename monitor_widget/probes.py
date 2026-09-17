@@ -105,6 +105,15 @@ class Probe:
         """Text shown in large type, one per column."""
         return [self.format(value) for value in values]
 
+    def prefixes(self):
+        """Mark drawn before each number, at a size of its own, or None."""
+        return [None] * self.columns()
+
+    def template(self):
+        """Widest text a column can hold. The drawing picks the font size on
+        it rather than on the current value, so the number never resizes."""
+        return self.format(self.maximum)
+
     def ratio(self, value, column=0):
         """Position of the value between 0 and 1, for the graph and color."""
         span = self.maximum - self.minimum
@@ -169,6 +178,18 @@ class MemoryProbe(Probe):
         if self._display == "value":
             return size
         return "{} · {}".format(percent, size)
+
+    def template(self):
+        # Full percentage, and a used value as wide as it can get: below a
+        # hundred it carries a decimal the total does not.
+        if self._display == "percent" or not self._total:
+            return "100%"
+        total, unit = _scale(self._total)
+        widest = "{:.0f},9".format(total) if total < 100 else _number(total)
+        size = "{}/{} {}".format(widest, _number(total), unit)
+        if self._display == "value":
+            return size
+        return "100% · {}".format(size)
 
 
 @register
@@ -247,15 +268,20 @@ class NetworkProbe(Probe):
         return ["↓", "↑"]
 
     def texts(self, values):
-        # One unit for the whole block, so the two figures can be compared.
+        # One unit for the whole block, so the two figures can be compared,
+        # but written on each of them: a number alone means nothing.
         _scaled, unit = _scale(max(list(values) + [self.FLOOR]))
         divider = 1024.0 ** ["o", "Ko", "Mo", "Go", "To"].index(unit)
-        arrows = self._arrows()
-        last = len(values) - 1
-        # The unit is written once, at the end, since both figures share it.
-        return ["{} {}{}".format(arrows[index], _number(value / divider),
-                                 " {}/s".format(unit) if index == last else "")
-                for index, value in enumerate(values)]
+        return ["{} {}/s".format(_number(value / divider), unit)
+                for value in values]
+
+    def prefixes(self):
+        return self._arrows()
+
+    def template(self):
+        # Widest rate expected on a home line; a faster one simply gets a
+        # shorter number ("123 Mo/s"), so the size still holds.
+        return "99,9 Mo/s"
 
     def ratio(self, value, column=0):
         peak = max(list(self._peaks[column]) + [self.FLOOR])
