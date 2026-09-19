@@ -206,7 +206,9 @@ class NetworkProbe(Probe):
     # Enough of a rate to be worth drawing: below that the graph stays flat
     # instead of turning noise into a mountain.
     FLOOR = 64 * 1024.0
-    DOWNLOAD_COLOR = "#4caf50"
+    # Purple: the green to red scale of the other metrics already owns green,
+    # so each graph keeps a color of its own.
+    DOWNLOAD_COLOR = "#ab47bc"
     UPLOAD_COLOR = "#42a5f5"
 
     def __init__(self):
