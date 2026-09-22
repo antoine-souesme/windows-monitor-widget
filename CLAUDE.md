@@ -32,6 +32,7 @@ color scale.
 | `packaging/msix/` | manifest and logos of the Microsoft Store package |
 | `.github/workflows/tests.yml` | runs the tests on every pull request |
 | `.github/workflows/release.yml` | builds `setup_<version>.exe`: artifact on a manual run, release on a tag |
+| `.github/workflows/msix.yml` | builds the Store package, always as an artifact |
 
 ## Releasing
 
@@ -61,7 +62,9 @@ The same sources also ship as an MSIX package. `packaging/build_msix.ps1`
 runs PyInstaller, drops the manifest and the logos next to the executable and
 calls `makeappx`; `-Sign` adds a test signature so the package can be tried
 locally, the Store signs the real one. The logos are drawn by
-`packaging/make_icons.py`, which needs nothing installed.
+`packaging/make_icons.py`, which needs nothing installed. The same build
+runs on GitHub (`msix.yml`), so the package can be obtained without a
+Windows machine at hand.
 
 Inside a package Windows owns the auto start (declared as a startup task in
 the manifest, turned off from the system settings) and the updates. So
