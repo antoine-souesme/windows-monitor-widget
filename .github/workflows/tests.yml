@@ -1,7 +1,7 @@
 name: Tests
 
 # Runs on every pull request: the tests need no display, so a Linux runner is
-# enough. Building the installer stays in the release workflow.
+# enough. Building the package stays in the Store workflow.
 on:
   pull_request:
   workflow_dispatch:

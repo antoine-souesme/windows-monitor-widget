@@ -8,11 +8,9 @@ its graph drawn behind it.
 
 ## Install
 
-Download `setup_<version>.exe` from the
-[releases](../../releases) and run it. No administrator rights needed: it
-installs into `%LOCALAPPDATA%\Programs\MonitorWidget` for the current user.
-Running a newer installer over an existing copy updates it in place and keeps
-the settings.
+Install it from the Microsoft Store: Windows then takes care of the auto
+start and of the updates. The same package is also attached to every
+[release](../../releases) as a `.msix` file, for a manual install.
 
 ## Run from the sources
 
@@ -33,10 +31,9 @@ follows the number of metrics shown.
 
 ## Uninstall
 
-Use *Add or remove programs*, entry **Monitor Widget**. It closes the widget and
-removes the auto start entry.
+Use *Add or remove programs*, entry **Monitor Widget**.
 
-When it was run from the sources instead, remove the entry by hand:
+When it was run from the sources instead, remove the auto start entry by hand:
 
 ```
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v MonitorWidget /f
@@ -49,9 +46,9 @@ Deleting the folder `%APPDATA%\MonitorWidget` removes the saved settings.
 1. Bump `__version__` in `monitor_widget/version.py`.
 2. Commit, then tag: `git tag v1.2.0 && git push origin v1.2.0`.
 
-A Windows runner builds the executable with PyInstaller, wraps it with Inno
-Setup and attaches `setup_1.2.0.exe` to the GitHub release. The workflow fails
-on purpose when the tag and `version.py` disagree.
+A Windows runner builds the executable with PyInstaller, wraps it in an MSIX
+package and attaches it to the GitHub release. The workflow fails on purpose
+when the tag and `version.py` disagree.
 
 ## Adding another metric
 
@@ -80,5 +77,5 @@ class DiskProbe(Probe):
 | `monitor_widget/ui.py` | window, drawing, dragging, context menu |
 | `monitor_widget/version.py` | version number, checked against the release tag |
 | `packaging/monitor_widget.spec` | PyInstaller recipe |
-| `packaging/installer.iss` | Inno Setup script producing `setup_<version>.exe` |
-| `.github/workflows/release.yml` | builds and publishes the installer on a tag |
+| `packaging/msix/` | manifest and logos of the Microsoft Store package |
+| `.github/workflows/msix.yml` | builds the package, and publishes it on a tag |

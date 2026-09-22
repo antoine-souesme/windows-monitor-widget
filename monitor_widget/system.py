@@ -191,9 +191,8 @@ _APPMODEL_ERROR_NO_PACKAGE = 15700
 def is_packaged():
     """True when the widget runs from an MSIX package (Microsoft Store).
 
-    In that case Windows owns both the auto start (declared in the manifest
-    and toggled from the system settings) and the updates, so the matching
-    menu entries are hidden and the updater never runs.
+    In that case Windows owns the auto start (declared in the manifest and
+    toggled from the system settings), so the matching menu entry is hidden.
     """
     if not IS_WINDOWS:
         return False

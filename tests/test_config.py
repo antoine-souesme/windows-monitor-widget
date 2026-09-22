@@ -69,25 +69,6 @@ class ConfigTest(unittest.TestCase):
             handle.write("{ not json")
         self.assertEqual(config.load()["probes"], ["cpu"])
 
-    def test_update_check_is_on_by_default(self):
-        values = config.load()
-        self.assertTrue(values["check_updates"])
-        self.assertEqual(values["last_update_check"], 0.0)
-
-    def test_update_check_settings_are_read(self):
-        self.write({"check_updates": False, "last_update_check": 1234.5})
-        values = config.load()
-        self.assertFalse(values["check_updates"])
-        self.assertEqual(values["last_update_check"], 1234.5)
-
-    def test_update_date_without_decimals_is_read(self):
-        self.write({"last_update_check": 1234})
-        self.assertEqual(config.load()["last_update_check"], 1234.0)
-
-    def test_broken_update_date_falls_back_to_never(self):
-        self.write({"last_update_check": "hier"})
-        self.assertEqual(config.load()["last_update_check"], 0.0)
-
     def test_metric_options_have_their_default(self):
         values = config.load()
         self.assertEqual(values["ram_display"], "percent")

@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
 """The widget window: drawing, dragging and context menu."""
 
-import threading
-import time
 import tkinter as tk
 import tkinter.font as tkfont
 from collections import deque
 
-from . import config, probes, system, updater
+from . import config, probes, system
 from .version import __version__
 
 # Palette.
@@ -36,10 +34,6 @@ COMPACT_PREFIX_SIZE = 10
 PREFIX_GAP = 5           # empty space between that mark and the number
 EMPTY_HEIGHT = 60        # height used when no metric is selected
 EMPTY_TEXT = "Veuillez sélectionner une métrique à afficher"
-UPDATE_COLOR = "#4caf50"   # the dot shown when a new version is available
-UPDATE_DOT = 4             # its radius
-UPDATE_DELAY_MS = 30000    # time left to the widget to settle before checking
-UPDATE_POLL_MS = 3600000   # how often the daily deadline is looked at again
 
 
 def window_height(count, compact):
@@ -129,8 +123,6 @@ class WidgetWindow(tk.Toplevel):
         self._drag_origin = None
         self._dragged = False
         self._job = None
-        self._update_job = None
-        self._available_update = None
 
         self._setup_window()
         self._build_canvas()
@@ -138,7 +130,6 @@ class WidgetWindow(tk.Toplevel):
         self._restore_position()
         self._draw()
         self._schedule_sample()
-        self._schedule_update_check()
 
     # ------------------------------------------------------------------
     # Setup
@@ -175,7 +166,6 @@ class WidgetWindow(tk.Toplevel):
         self.startup_var = tk.BooleanVar(value=system.is_startup_enabled())
         self.on_top_var = tk.BooleanVar(value=self.values["always_on_top"])
         self.compact_var = tk.BooleanVar(value=self.values["compact"])
-        self.updates_var = tk.BooleanVar(value=self.values["check_updates"])
         selected = [probe.key for probe in self.probes]
         self.probe_vars = {key: tk.BooleanVar(value=key in selected)
                            for key in probes.PROBES}
@@ -183,8 +173,6 @@ class WidgetWindow(tk.Toplevel):
         self.menu = tk.Menu(self, tearoff=0)
         # Plain caption, so the installed version is visible without a window.
         self.menu.add_command(label="Monitor Widget {}".format(__version__), state="disabled")
-        # The update entry is inserted right here, but only once a newer
-        # release has been found (see _show_update).
         self.menu.add_separator()
         metrics = tk.Menu(self.menu, tearoff=0)
         for key, cls in probes.PROBES.items():
@@ -197,7 +185,7 @@ class WidgetWindow(tk.Toplevel):
         self.menu.add_checkbutton(label="Mode compact",
                                   variable=self.compact_var,
                                   command=self._toggle_compact)
-        # In a Store package Windows owns the auto start and the updates.
+        # In a Store package Windows owns the auto start.
         if not system.is_packaged():
             self.menu.add_checkbutton(label="Lancer au démarrage",
                                       variable=self.startup_var,
@@ -205,10 +193,6 @@ class WidgetWindow(tk.Toplevel):
         self.menu.add_checkbutton(label="Toujours au premier plan",
                                   variable=self.on_top_var,
                                   command=self._toggle_on_top)
-        if not system.is_packaged():
-            self.menu.add_checkbutton(label="Vérifier les mises à jour",
-                                      variable=self.updates_var,
-                                      command=self._toggle_updates)
         self.menu.add_separator()
         self.menu.add_command(label="Quitter", command=self.quit_widget)
 
@@ -296,9 +280,6 @@ class WidgetWindow(tk.Toplevel):
                 else:
                     self._draw_block(probe, top, block)
                 top += block + gap
-        # Drawn last, so no graph ever covers it.
-        if self._available_update:
-            self._draw_update_dot(width)
 
     def _last(self, probe):
         """Most recent sample of a metric, zeros before the first one."""
@@ -469,12 +450,6 @@ class WidgetWindow(tk.Toplevel):
         config.save(self.values)
         self._resize()
 
-    def _toggle_updates(self):
-        self.values["check_updates"] = self.updates_var.get()
-        config.save(self.values)
-        if self.values["check_updates"]:
-            self._schedule_update_check()
-
     def _toggle_compact(self):
         self.values["compact"] = self.compact_var.get()
         config.save(self.values)
@@ -515,96 +490,10 @@ class WidgetWindow(tk.Toplevel):
         self._draw()
 
     # ------------------------------------------------------------------
-    # Updates
-    # ------------------------------------------------------------------
-
-    def _schedule_update_check(self, delay=UPDATE_DELAY_MS):
-        """Arm the next look at GitHub, without stacking two timers."""
-        self._cancel_update_job()
-        if not self.values["check_updates"] or system.is_packaged():
-            return
-        self._update_job = self.after(delay, self._update_tick)
-
-    def _update_tick(self):
-        """Check when the day has passed, then come back later anyway: the
-        widget can stay open far longer than the interval."""
-        self._update_job = None
-        if self._available_update or not self.values["check_updates"]:
-            return
-        if updater.should_check(self.values["last_update_check"]):
-            self.values["last_update_check"] = time.time()
-            config.save(self.values)
-            updater.check_in_background(self._update_found)
-        self._schedule_update_check(UPDATE_POLL_MS)
-
-    def _cancel_update_job(self):
-        if self._update_job is None:
-            return
-        try:
-            self.after_cancel(self._update_job)
-        except tk.TclError:
-            pass
-        self._update_job = None
-
-    def _update_found(self, release):
-        """Called from the background thread: come back to the UI thread."""
-        if release is None:
-            return
-        try:
-            self.after(0, lambda: self._show_update(release))
-        except (tk.TclError, RuntimeError):
-            # The window is already gone: nothing left to show.
-            pass
-
-    def _show_update(self, release):
-        """Add the menu entry and the dot telling a version is waiting."""
-        if self._available_update:
-            return
-        self._available_update = release
-        self.menu.insert_command(
-            1, label="Mettre à jour vers {}".format(release.version),
-            command=self._install_update)
-        self._draw()
-
-    def _install_update(self):
-        """Download the installer in the background, then step aside."""
-        release = self._available_update
-        if release is None:
-            return
-        self._available_update = None      # no second click during the download
-        self.menu.delete(1)
-        self._draw()
-
-        def fetch():
-            path = updater.download(release)
-            try:
-                self.after(0, lambda: self._installer_ready(release, path))
-            except (tk.TclError, RuntimeError):
-                pass
-
-        threading.Thread(target=fetch, name="update-download", daemon=True).start()
-
-    def _installer_ready(self, release, path):
-        """Start the downloaded installer, or put the entry back on failure."""
-        if path is not None and updater.install(path):
-            # The installer replaces the files, so the running copy must stop.
-            self.quit_widget()
-            return
-        self._show_update(release)
-
-    def _draw_update_dot(self, width):
-        """Small colored dot in the top right corner of the widget."""
-        x = width - MARGIN + 2
-        self.canvas.create_oval(x - UPDATE_DOT, MARGIN - UPDATE_DOT,
-                                x + UPDATE_DOT, MARGIN + UPDATE_DOT,
-                                fill=UPDATE_COLOR, outline="")
-
-    # ------------------------------------------------------------------
     # Shutdown
     # ------------------------------------------------------------------
 
     def quit_widget(self):
-        self._cancel_update_job()
         if self._job is not None:
             try:
                 self.after_cancel(self._job)

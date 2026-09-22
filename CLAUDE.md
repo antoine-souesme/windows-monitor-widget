@@ -24,37 +24,30 @@ color scale.
 | `monitor_widget/config.py` | `%APPDATA%\MonitorWidget\config.json` read/write |
 | `monitor_widget/system.py` | Win32 styles, displays, `HKCU\...\Run`, mutex |
 | `monitor_widget/probes.py` | the measurable metrics |
-| `monitor_widget/updater.py` | the only network code: looks for a newer release, installs it |
 | `monitor_widget/ui.py` | window, drawing, dragging, context menu |
 | `monitor_widget/version.py` | single source of truth for the version |
 | `tests/` | configuration and layout tests (no display needed) |
-| `packaging/` | PyInstaller spec and Inno Setup script |
+| `packaging/` | PyInstaller spec and MSIX build script |
 | `packaging/msix/` | manifest and logos of the Microsoft Store package |
 | `.github/workflows/tests.yml` | runs the tests on every pull request |
-| `.github/workflows/release.yml` | builds `setup_<version>.exe`: artifact on a manual run, release on a tag |
-| `.github/workflows/msix.yml` | builds the Store package, always as an artifact |
+| `.github/workflows/msix.yml` | builds the Store package: artifact on a manual run, release on a tag |
 
 ## Releasing
 
-Running the release workflow by hand builds the installer and leaves it as an
+The widget is only shipped as an MSIX package, through the Microsoft Store.
+There is no `.exe` installer any more and no update code in the widget:
+Windows updates a Store install on its own.
+
+Running the Store workflow by hand builds the package and leaves it as an
 artifact of the run, so a version can be tried before it is tagged.
 
 Version lives only in `monitor_widget/version.py`. A `v<version>` tag triggers
-the same build and publishes it; the workflow refuses to run when the tag and that file
-disagree. The installer is per user (`%LOCALAPPDATA%\Programs\MonitorWidget`,
-no elevation) and upgrades in place, so `AppId` in `installer.iss` must never
-change. Settings stay in `%APPDATA%\MonitorWidget` across updates.
+the same build and attaches the `.msix` to the GitHub release; the workflow
+refuses to run when the tag and that file disagree. Settings stay in
+`%APPDATA%\MonitorWidget` across updates.
 
 Code that resolves paths must handle the frozen case (`sys.frozen`), since
 after packaging there is no `.py` file next to the executable.
-
-## Updating
-
-The widget asks GitHub for the latest release half a minute after it starts,
-then once a day, on a background thread. A newer version adds a menu entry and
-a colored dot; nothing is downloaded before the user clicks it. The installer
-is fetched to the temporary folder and started silently, which replaces the
-running copy and relaunches it. The check can be turned off from the menu.
 
 ## Microsoft Store
 
@@ -67,10 +60,9 @@ runs on GitHub (`msix.yml`), so the package can be obtained without a
 Windows machine at hand.
 
 Inside a package Windows owns the auto start (declared as a startup task in
-the manifest, turned off from the system settings) and the updates. So
-`system.is_packaged()` hides both menu entries and keeps `updater.py` idle.
-`Identity` in the manifest must never change, like `AppId` in `installer.iss`,
-and its version carries a fourth number that stays at zero.
+the manifest, turned off from the system settings), so `system.is_packaged()`
+hides that menu entry. `Identity` in the manifest must never change, and its
+version carries a fourth number that stays at zero.
 
 ## Adding a metric
 

@@ -24,8 +24,6 @@ DEFAULTS = {
     "always_on_top": True,
     "probes": ["cpu"],      # keys of the displayed metrics (see probes.py)
     "compact": False,       # one line per metric, graph drawn behind it
-    "check_updates": True,  # look for a newer release on GitHub
-    "last_update_check": 0.0,   # epoch seconds of the last look (0 = never)
 }
 # Every metric adds its own choices here (see probes.Option).
 DEFAULTS.update(probes.option_defaults())
@@ -92,11 +90,6 @@ def _sanitize(values):
             values[key] = None
     values["always_on_top"] = bool(values.get("always_on_top", True))
     values["compact"] = bool(values.get("compact", False))
-    values["check_updates"] = bool(values.get("check_updates", True))
-    try:
-        values["last_update_check"] = float(values.get("last_update_check", 0.0))
-    except (TypeError, ValueError):
-        values["last_update_check"] = 0.0
     # A choice that no longer exists falls back to the default of its metric.
     for cls in probes.options():
         for option in cls.options:
