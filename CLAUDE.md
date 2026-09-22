@@ -29,6 +29,7 @@ color scale.
 | `monitor_widget/version.py` | single source of truth for the version |
 | `tests/` | configuration and layout tests (no display needed) |
 | `packaging/` | PyInstaller spec and Inno Setup script |
+| `packaging/msix/` | manifest and logos of the Microsoft Store package |
 | `.github/workflows/tests.yml` | runs the tests on every pull request |
 | `.github/workflows/release.yml` | builds `setup_<version>.exe`: artifact on a manual run, release on a tag |
 
@@ -53,6 +54,20 @@ then once a day, on a background thread. A newer version adds a menu entry and
 a colored dot; nothing is downloaded before the user clicks it. The installer
 is fetched to the temporary folder and started silently, which replaces the
 running copy and relaunches it. The check can be turned off from the menu.
+
+## Microsoft Store
+
+The same sources also ship as an MSIX package. `packaging/build_msix.ps1`
+runs PyInstaller, drops the manifest and the logos next to the executable and
+calls `makeappx`; `-Sign` adds a test signature so the package can be tried
+locally, the Store signs the real one. The logos are drawn by
+`packaging/make_icons.py`, which needs nothing installed.
+
+Inside a package Windows owns the auto start (declared as a startup task in
+the manifest, turned off from the system settings) and the updates. So
+`system.is_packaged()` hides both menu entries and keeps `updater.py` idle.
+`Identity` in the manifest must never change, like `AppId` in `installer.iss`,
+and its version carries a fourth number that stays at zero.
 
 ## Adding a metric
 
