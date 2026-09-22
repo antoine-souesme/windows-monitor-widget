@@ -63,9 +63,14 @@ if ($Sign) {
             -KeyUsage DigitalSignature -FriendlyName "Monitor Widget test" `
             -CertStoreLocation "Cert:\CurrentUser\My" `
             -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
-        Write-Host "Test certificate created. Import it into" `
-            "'Trusted People' (certlm.msc) before installing the package."
     }
+    # Windows refuses the package until this certificate is trusted, so the
+    # file to import is written next to it.
+    $exported = Join-Path $output "test-certificate.cer"
+    Export-Certificate -Cert $certificate -FilePath $exported | Out-Null
+    Write-Host "Before installing, run once as administrator:"
+    Write-Host "  Import-Certificate -FilePath $exported" `
+        "-CertStoreLocation Cert:\LocalMachine\TrustedPeople"
     & $signtool sign /fd SHA256 /a /sha1 $certificate.Thumbprint $package
     if ($LASTEXITCODE -ne 0) { throw "signtool failed" }
 }
