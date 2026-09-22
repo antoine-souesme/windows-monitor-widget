@@ -1,0 +1,45 @@
+name: Store package
+
+# Builds the MSIX submitted to the Microsoft Store and leaves it as an
+# artifact of the run: nothing has to be built on a Windows machine by hand.
+# The package is left unsigned, the Store signs it on ingestion.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          $file = python -c "from monitor_widget.version import __version__; print(__version__)"
+          if ($env:GITHUB_REF -like 'refs/tags/*') {
+            $tag = $env:GITHUB_REF_NAME -replace '^v', ''
+            if ($tag -ne $file) {
+              throw "Tag $tag does not match monitor_widget/version.py ($file)"
+            }
+          }
+          "value=$file" >> $env:GITHUB_OUTPUT
+
+      - name: Build the package
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File packaging\build_msix.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MonitorWidget_${{ steps.version.outputs.value }}_build${{ github.run_number }}_msix
+          path: dist/store/*.msix

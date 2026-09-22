@@ -179,3 +179,28 @@ def set_startup_enabled(enabled):
     except OSError:
         pass
     return is_startup_enabled()
+
+
+# --------------------------------------------------------------------------
+# Store package
+# --------------------------------------------------------------------------
+
+_APPMODEL_ERROR_NO_PACKAGE = 15700
+
+
+def is_packaged():
+    """True when the widget runs from an MSIX package (Microsoft Store).
+
+    In that case Windows owns both the auto start (declared in the manifest
+    and toggled from the system settings) and the updates, so the matching
+    menu entries are hidden and the updater never runs.
+    """
+    if not IS_WINDOWS:
+        return False
+    try:
+        kernel32 = ctypes.windll.kernel32
+        length = ctypes.c_uint32(0)
+        result = kernel32.GetCurrentPackageFullName(ctypes.byref(length), None)
+        return result != _APPMODEL_ERROR_NO_PACKAGE
+    except (AttributeError, OSError):
+        return False
