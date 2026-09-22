@@ -197,15 +197,18 @@ class WidgetWindow(tk.Toplevel):
         self.menu.add_checkbutton(label="Mode compact",
                                   variable=self.compact_var,
                                   command=self._toggle_compact)
-        self.menu.add_checkbutton(label="Lancer au démarrage",
-                                  variable=self.startup_var,
-                                  command=self._toggle_startup)
+        # In a Store package Windows owns the auto start and the updates.
+        if not system.is_packaged():
+            self.menu.add_checkbutton(label="Lancer au démarrage",
+                                      variable=self.startup_var,
+                                      command=self._toggle_startup)
         self.menu.add_checkbutton(label="Toujours au premier plan",
                                   variable=self.on_top_var,
                                   command=self._toggle_on_top)
-        self.menu.add_checkbutton(label="Vérifier les mises à jour",
-                                  variable=self.updates_var,
-                                  command=self._toggle_updates)
+        if not system.is_packaged():
+            self.menu.add_checkbutton(label="Vérifier les mises à jour",
+                                      variable=self.updates_var,
+                                      command=self._toggle_updates)
         self.menu.add_separator()
         self.menu.add_command(label="Quitter", command=self.quit_widget)
 
@@ -443,7 +446,8 @@ class WidgetWindow(tk.Toplevel):
 
     def _open_menu(self, event):
         # The check box always mirrors the real registry state.
-        self.startup_var.set(system.is_startup_enabled())
+        if not system.is_packaged():
+            self.startup_var.set(system.is_startup_enabled())
         try:
             self.menu.tk_popup(event.x_root, event.y_root)
         finally:
@@ -517,7 +521,7 @@ class WidgetWindow(tk.Toplevel):
     def _schedule_update_check(self, delay=UPDATE_DELAY_MS):
         """Arm the next look at GitHub, without stacking two timers."""
         self._cancel_update_job()
-        if not self.values["check_updates"]:
+        if not self.values["check_updates"] or system.is_packaged():
             return
         self._update_job = self.after(delay, self._update_tick)
 
