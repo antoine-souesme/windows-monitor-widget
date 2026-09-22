@@ -7,7 +7,7 @@ description: Use when the user asks to release Monitor Widget, publish a new ver
 
 Publie une nouvelle version du widget en passant par `main`, puis remet
 `develop` à jour. Le tag poussé déclenche la construction de
-`setup_X.Y.Z.exe` sur GitHub Actions.
+le paquet `.msix` sur GitHub Actions et l'attache à la release.
 
 ## Version
 
@@ -42,20 +42,20 @@ Si une fusion tombe en conflit, s'arrêter et prévenir l'utilisateur : ne jamai
 résoudre un conflit de fusion de release tout seul.
 
 Le numéro de version ne vit qu'à un seul endroit : ne pas le recopier dans
-`installer.iss`, le spec PyInstaller ou le workflow, qui le lisent déjà.
+le manifeste MSIX, le spec PyInstaller ou le workflow, qui le lisent déjà.
 
 ## À la fin
 
 Annoncer la version publiée et l'état des deux branches, en une ou deux
 phrases, puis donner le lien du workflow de release en cours
-(`gh run list --workflow release.yml --limit 1`). L'installeur apparaît dans
-la release GitHub quelques minutes plus tard.
+(`gh run list --workflow msix.yml --limit 1`). Le paquet `.msix` apparaît
+dans la release GitHub quelques minutes plus tard.
 
 Si le workflow échoue, le signaler mais ne rien retenter sans l'accord de
 l'utilisateur : le tag est déjà poussé, seule la construction est à reprendre.
 
 ## Hors périmètre
 
-Pas de création manuelle de la release GitHub ni d'envoi de l'installeur à la
+Pas de création manuelle de la release GitHub ni d'envoi du paquet à la
 main (le workflow s'en charge), pas de pull request, pas de signature de code :
 uniquement les fusions, le tag et les poussées décrits ci-dessus.
