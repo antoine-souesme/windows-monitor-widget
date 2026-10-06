@@ -24,20 +24,24 @@ MARGIN = 12
 PADDING = 10             # empty space above the first block and below the last
 BLOCK_HEIGHT = 70        # one metric: caption, large number, graph
 BLOCK_GAP = 10
-COMPACT_HEIGHT = 26      # one metric on a single line, graph behind it
+COMPACT_HEIGHT = 34      # one value: caption and graph, then number and gauge
 COMPACT_GAP = 6
+COMPACT_GRAPH = 18       # height of the graph row, the gauge row takes the rest
+GAUGE_THICKNESS = 6      # height of the bar showing the current value
+LEGEND_GAP = 8           # empty space between the left texts and the drawings
+LEGEND_SHARE = 0.5       # the left texts never take more of the width than that
 COLUMN_GAP = 10          # empty space between two values of the same metric
 BLOCK_SIZES = [22, 18, 15, 12, 10]    # font sizes tried for the large number
-COMPACT_SIZES = [13, 11, 10, 9]
+COMPACT_SIZES = [10, 9, 8, 7]
 PREFIX_SIZE = 13         # the mark before a number, never resized with it
-COMPACT_PREFIX_SIZE = 10
 PREFIX_GAP = 5           # empty space between that mark and the number
 EMPTY_HEIGHT = 60        # height used when no metric is selected
 EMPTY_TEXT = "Veuillez sélectionner une métrique à afficher"
 
 
 def window_height(count, compact):
-    """Height needed to stack `count` metric blocks."""
+    """Height needed to stack `count` metric blocks, or `count` values in
+    compact mode, where each value of a metric gets lines of its own."""
     if count < 1:
         return EMPTY_HEIGHT
     block = COMPACT_HEIGHT if compact else BLOCK_HEIGHT
@@ -224,7 +228,8 @@ class WidgetWindow(tk.Toplevel):
             # A choice can add or remove a column: start that graph over.
             if len(self.histories[probe.key][-1]) != probe.columns():
                 self.histories[probe.key] = _blank_history(probe.columns())
-        self._draw()
+        # In compact mode each value has lines of its own: the height follows.
+        self._resize()
 
     def _restore_position(self):
         """Restore the saved position, or recenter when it is off screen."""
@@ -247,6 +252,7 @@ class WidgetWindow(tk.Toplevel):
         self._job = self.after(REFRESH_MS, self._sample)
 
     def _sample(self):
+        height = self._height()
         for probe in self.probes:
             try:
                 values = _as_values(probe.read())
@@ -257,7 +263,10 @@ class WidgetWindow(tk.Toplevel):
             if len(history[-1]) != len(values):
                 history = self.histories[probe.key] = _blank_history(len(values))
             history.append(values)
-        self._draw()
+        if self._height() != height:
+            self._resize()
+        else:
+            self._draw()
         self._schedule_sample()
 
     def _draw(self):
@@ -274,12 +283,15 @@ class WidgetWindow(tk.Toplevel):
             block = COMPACT_HEIGHT if compact else BLOCK_HEIGHT
             gap = COMPACT_GAP if compact else BLOCK_GAP
             top = PADDING
+            legend = self._legend_width() if compact else 0
             for probe in self.probes:
                 if compact:
-                    self._draw_compact_block(probe, top, block)
+                    for column in range(len(self._last(probe))):
+                        self._draw_compact_line(probe, column, top, legend)
+                        top += block + gap
                 else:
                     self._draw_block(probe, top, block)
-                top += block + gap
+                    top += block + gap
 
     def _last(self, probe):
         """Most recent sample of a metric, zeros before the first one."""
@@ -309,34 +321,67 @@ class WidgetWindow(tk.Toplevel):
             self._draw_graph(probe, index, x0, top + 44, x1, top + block,
                              self._color(probe, values[index], index))
 
-    def _draw_compact_block(self, probe, top, block):
-        """One line: the graph fills the block, caption and number on top."""
+    def _captions(self, probe):
+        """Name written before each graph. A broken metric falls back on
+        its label."""
+        try:
+            return probe.captions()
+        except Exception:
+            return [probe.label] * len(self._last(probe))
+
+    def _legend_width(self):
+        """Width of the left texts in compact mode, shared by every line so
+        the graphs and gauges start at the same place."""
+        widest = 0
+        for probe in self.probes:
+            values = self._last(probe)
+            texts = probe.texts(values)
+            captions = self._captions(probe)
+            for column in range(len(values)):
+                caption = captions[column] if column < len(captions) else ""
+                widest = max(widest,
+                             text_width(caption, ("Segoe UI", 9)),
+                             text_width(self._template(probe, texts[column]),
+                                        ("Segoe UI", COMPACT_SIZES[0])))
+        room = (self.values["width"] - 2 * MARGIN) * LEGEND_SHARE
+        return min(widest, room)
+
+    def _draw_compact_line(self, probe, column, top, legend):
+        """Caption then graph on a first row, number then gauge on a second
+        one: the texts never sit on top of the drawings."""
         width = self.values["width"]
         values = self._last(probe)
+        value = values[column]
         texts = probe.texts(values)
-        middle = top + block // 2
-        single = len(values) == 1
-        if single:
-            # The caption has room only when one number shares the line.
-            self.canvas.create_text(MARGIN, middle, anchor="w", text=probe.label,
-                                    fill=CAPTION, font=("Segoe UI", 9))
-        areas = columns(MARGIN, width - MARGIN, len(values))
-        for index, (x0, x1) in enumerate(areas):
-            self._draw_graph(probe, index, x0, top, x1, top + block,
-                             self._color(probe, values[index], index),
-                             baseline=False)
-            prefix, prefix_font, font = self._fonts(probe, index, texts[index],
-                                                    x1 - x0, COMPACT_SIZES,
-                                                    COMPACT_PREFIX_SIZE)
-            self.canvas.create_text(x1, middle, anchor="e", text=texts[index],
-                                    fill=TEXT, font=font)
-            if prefix:
-                # Placed on the room the widest number needs, not on the
-                # current one, so it does not walk as the figure changes.
-                x = x1 - text_width(self._template(probe, texts[index]), font)
-                self.canvas.create_text(x - PREFIX_GAP, middle, anchor="e",
-                                        text=prefix, fill=TEXT,
-                                        font=prefix_font)
+        captions = self._captions(probe)
+        caption = captions[column] if column < len(captions) else ""
+        color = self._color(probe, value, column)
+        left = MARGIN + legend + LEGEND_GAP
+        right = width - MARGIN
+        bottom = top + COMPACT_HEIGHT
+
+        self.canvas.create_text(MARGIN, top + COMPACT_GRAPH // 2, anchor="w",
+                                text=caption, fill=CAPTION,
+                                font=("Segoe UI", 9))
+        self._draw_graph(probe, column, left, top, right, top + COMPACT_GRAPH,
+                         color)
+
+        middle = (top + COMPACT_GRAPH + bottom) // 2
+        font = fitting_font(self._template(probe, texts[column]), legend,
+                            COMPACT_SIZES)
+        self.canvas.create_text(MARGIN, middle, anchor="w", text=texts[column],
+                                fill=TEXT, font=font)
+        self._draw_gauge(probe.ratio(value, column), left, middle, right, color)
+
+    def _draw_gauge(self, ratio, x0, middle, x1, color):
+        """Bar filled as far as the current value goes."""
+        y0 = middle - GAUGE_THICKNESS // 2
+        y1 = y0 + GAUGE_THICKNESS
+        self.canvas.create_rectangle(x0, y0, x1, y1, fill=BORDER, outline="")
+        filled = x0 + (x1 - x0) * max(0.0, min(ratio, 1.0))
+        if filled > x0:
+            self.canvas.create_rectangle(x0, y0, filled, y1, fill=color,
+                                         outline="")
 
     @staticmethod
     def _template(probe, text):
@@ -476,7 +521,11 @@ class WidgetWindow(tk.Toplevel):
         self.histories = histories
 
     def _height(self):
-        return window_height(len(self.probes), self.values["compact"])
+        if self.values["compact"]:
+            # One pair of lines for each value a metric shows.
+            return window_height(sum(len(self.histories[probe.key][-1])
+                                     for probe in self.probes), True)
+        return window_height(len(self.probes), False)
 
     def _resize(self):
         """Give the window the height its content needs, then redraw."""

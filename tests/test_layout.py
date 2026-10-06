@@ -19,9 +19,9 @@ class WindowHeightTest(unittest.TestCase):
         self.assertEqual(ui.window_height(2, False), 170)
         self.assertEqual(ui.window_height(3, False), 250)
 
-    def test_compact_mode_is_much_shorter(self):
-        self.assertEqual(ui.window_height(1, True), 46)
-        self.assertEqual(ui.window_height(2, True), 78)
+    def test_compact_mode_is_shorter(self):
+        self.assertEqual(ui.window_height(1, True), 54)
+        self.assertEqual(ui.window_height(2, True), 94)
 
     def test_no_metric_shows_the_empty_frame(self):
         self.assertEqual(ui.window_height(0, False), ui.EMPTY_HEIGHT)

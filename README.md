@@ -3,8 +3,8 @@
 A small borderless Windows desktop widget showing live system metrics: a large
 percentage, a scrolling 60-second graph, and a color going from green to
 orange to red as the load rises. Tick as many metrics as you like and they
-stack from top to bottom; a compact mode puts each one on a single line with
-its graph drawn behind it.
+stack from top to bottom; a compact mode gives each value two thin lines: its
+name and graph, then its number and a bar filled up to the current value.
 
 ## Install
 
