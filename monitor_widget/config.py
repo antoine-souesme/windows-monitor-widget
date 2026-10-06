@@ -23,7 +23,7 @@ DEFAULTS = {
     "width": 200,
     "always_on_top": True,
     "probes": ["cpu"],      # keys of the displayed metrics (see probes.py)
-    "compact": False,       # one line per metric, graph drawn behind it
+    "compact": False,       # small lines: caption and graph, number and gauge
 }
 # Every metric adds its own choices here (see probes.Option).
 DEFAULTS.update(probes.option_defaults())
