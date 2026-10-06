@@ -105,6 +105,11 @@ class Probe:
         """Text shown in large type, one per column."""
         return [self.format(value) for value in values]
 
+    def captions(self):
+        """Name written before each value in compact mode, where every value
+        of a metric gets lines of its own."""
+        return [self.label] * self.columns()
+
     def prefixes(self):
         """Mark drawn before each number, at a size of its own, or None."""
         return [None] * self.columns()
@@ -279,6 +284,10 @@ class NetworkProbe(Probe):
 
     def prefixes(self):
         return self._arrows()
+
+    def captions(self):
+        names = {"↓": "Réception", "↑": "Envoi"}
+        return ["{} {}".format(arrow, names[arrow]) for arrow in self._arrows()]
 
     def template(self):
         # Widest rate expected on a home line; a faster one simply gets a

@@ -65,6 +65,10 @@ class NetworkTest(unittest.TestCase):
         self.assertEqual(self.probe("download").prefixes(), ["↓"])
         self.assertEqual(self.probe("upload").texts((0.0,)), ["0 Ko/s"])
 
+    def test_each_direction_has_a_caption_of_its_own(self):
+        self.assertEqual(self.probe().captions(), ["↓ Réception", "↑ Envoi"])
+        self.assertEqual(self.probe("upload").captions(), ["↑ Envoi"])
+
     def test_the_font_is_measured_on_a_fixed_template(self):
         self.assertEqual(self.probe().template(), "99,9 Mo/s")
 
