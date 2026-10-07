@@ -20,6 +20,9 @@ SCALE = [(0.0, (0x4c, 0xaf, 0x50)),   # green
 
 HISTORY_POINTS = 60      # 60 seconds of history
 REFRESH_MS = 1000        # one sample per second
+FRAME_MS = 33            # about 30 frames per second while the gauge moves
+EASING = 0.2             # share of the remaining distance covered per frame
+SETTLED = 0.002          # the gauge stops moving below that distance
 MARGIN = 12
 PADDING = 10             # empty space above the first block and below the last
 BLOCK_HEIGHT = 70        # one metric: caption, large number, graph
@@ -38,6 +41,7 @@ PREFIX_GAP = 5           # empty space between that mark and the number
 RESIZE_BORDER = 6        # strip along the sides that resizes instead of moving
 EMPTY_HEIGHT = 60        # height used when no metric is selected
 EMPTY_TEXT = "Veuillez sélectionner une métrique à afficher"
+SMOOTH_LABEL = "Animations fluides (consomme plus de CPU)"
 
 
 def window_height(count, compact):
@@ -121,6 +125,14 @@ def _as_values(read):
     return (float(read),)
 
 
+def eased(shown, target):
+    """Next position of a gauge gliding from `shown` towards `target`:
+    fast at first, slower when it gets close, exactly on it once near."""
+    if abs(target - shown) < SETTLED:
+        return target
+    return shown + (target - shown) * EASING
+
+
 def _blank_history(count):
     """Sixty empty samples, so a new graph starts flat instead of jumping."""
     return deque([(0.0,) * count] * HISTORY_POINTS, maxlen=HISTORY_POINTS)
@@ -153,6 +165,9 @@ class WidgetWindow(tk.Toplevel):
         self._edge = None
         self._dragged = False
         self._job = None
+        self._frame = None
+        self.gauges = {}         # (probe key, column) -> ratio on screen,
+                                 # behind the latest value when animated
 
         self._setup_window()
         self._build_canvas()
@@ -198,6 +213,7 @@ class WidgetWindow(tk.Toplevel):
         self.startup_var = tk.BooleanVar(value=system.is_startup_enabled())
         self.on_top_var = tk.BooleanVar(value=self.values["always_on_top"])
         self.compact_var = tk.BooleanVar(value=self.values["compact"])
+        self.smooth_var = tk.BooleanVar(value=self.values["smooth"])
         selected = [probe.key for probe in self.probes]
         self.probe_vars = {key: tk.BooleanVar(value=key in selected)
                            for key in probes.PROBES}
@@ -217,6 +233,9 @@ class WidgetWindow(tk.Toplevel):
         self.menu.add_checkbutton(label="Mode compact",
                                   variable=self.compact_var,
                                   command=self._toggle_compact)
+        self.menu.add_checkbutton(label=SMOOTH_LABEL,
+                                  variable=self.smooth_var,
+                                  command=self._toggle_smooth)
         # In a Store package Windows owns the auto start.
         if not system.is_packaged():
             self.menu.add_checkbutton(label="Lancer au démarrage",
@@ -296,6 +315,36 @@ class WidgetWindow(tk.Toplevel):
         else:
             self._draw()
         self._schedule_sample()
+        if self.values["smooth"]:
+            self._schedule_frame()
+
+    def _schedule_frame(self):
+        if self._frame is None:
+            self._frame = self.after(FRAME_MS, self._animate)
+
+    def _animate(self):
+        """Move every gauge a step closer to its latest value, and keep
+        going only while one of them is still on its way."""
+        self._frame = None
+        moving = False
+        for probe in self.probes:
+            for column, value in enumerate(self._last(probe)):
+                target = self._ratio(probe, value, column)
+                key = (probe.key, column)
+                shown = self.gauges.get(key, target)
+                self.gauges[key] = eased(shown, target)
+                moving = moving or self.gauges[key] != target
+        self._draw()
+        if moving:
+            self._schedule_frame()
+
+    @staticmethod
+    def _ratio(probe, value, column):
+        """Bounded fill ratio of one value. A broken metric shows empty."""
+        try:
+            return max(0.0, min(probe.ratio(value, column), 1.0))
+        except Exception:
+            return 0.0
 
     def _draw(self):
         width, height = self.values["width"], self._height()
@@ -385,7 +434,14 @@ class WidgetWindow(tk.Toplevel):
         texts = probe.texts(values)
         captions = self._captions(probe)
         caption = captions[column] if column < len(captions) else ""
-        color = self._color(probe, value, column)
+        # When animated, the gauge glides towards the value and takes its
+        # colors along; otherwise it jumps straight to it.
+        target = self._ratio(probe, value, column)
+        if self.values["smooth"]:
+            ratio = self.gauges.setdefault((probe.key, column), target)
+        else:
+            ratio = self.gauges[(probe.key, column)] = target
+        color = probe.tint(column) or load_color(ratio)
         left = MARGIN + legend + LEGEND_GAP
         right = width - MARGIN
         bottom = top + COMPACT_HEIGHT
@@ -401,7 +457,7 @@ class WidgetWindow(tk.Toplevel):
                             COMPACT_SIZES)
         self.canvas.create_text(MARGIN, middle, anchor="w", text=texts[column],
                                 fill=TEXT, font=font)
-        self._draw_gauge(probe.ratio(value, column), left, middle, right, color)
+        self._draw_gauge(ratio, left, middle, right, color)
 
     def _draw_gauge(self, ratio, x0, middle, x1, color):
         """Bar filled as far as the current value goes."""
@@ -551,6 +607,14 @@ class WidgetWindow(tk.Toplevel):
         config.save(self.values)
         self._resize()
 
+    def _toggle_smooth(self):
+        self.values["smooth"] = self.smooth_var.get()
+        config.save(self.values)
+        if not self.values["smooth"] and self._frame is not None:
+            self.after_cancel(self._frame)
+            self._frame = None
+        self._draw()
+
     def _apply_selection(self, keys):
         """Rebuild the list of probes, keeping the history of those already
         displayed so switching an unrelated metric does not reset the graphs."""
@@ -594,9 +658,11 @@ class WidgetWindow(tk.Toplevel):
     # ------------------------------------------------------------------
 
     def quit_widget(self):
-        if self._job is not None:
+        for job in (self._job, self._frame):
+            if job is None:
+                continue
             try:
-                self.after_cancel(self._job)
+                self.after_cancel(job)
             except tk.TclError:
                 pass
         self.values["x"] = self.winfo_x()
