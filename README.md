@@ -22,8 +22,21 @@ pythonw.exe main.py
 Python 3.8 or later, on Windows.
 
 - Drag it anywhere with the left mouse button.
+- Drag its left or right edge to change its width: only the graphs stretch.
 - Right click for the menu: displayed metrics (check boxes), compact mode,
   start with Windows, always on top, quit.
+
+### On macOS
+
+The window also opens on a Mac, which is enough to check drawing and
+sampling. The Python shipped by Apple comes with an old Tk that freezes on
+recent macOS, so use the Homebrew one:
+
+```
+brew install python-tk@3.13
+python3.13 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python main.py
+```
 
 Position, width, the "always on top" and "compact" options and the selected
 metrics are stored in `%APPDATA%\MonitorWidget\config.json`. The height

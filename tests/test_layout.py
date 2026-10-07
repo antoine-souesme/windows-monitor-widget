@@ -41,5 +41,43 @@ class ColumnTest(unittest.TestCase):
         self.assertEqual(left[1] - left[0], right[1] - right[0])
 
 
+class ResizeTest(unittest.TestCase):
+
+    def test_pointer_near_an_edge_grabs_it(self):
+        self.assertEqual(ui.resize_edge(2, 200), "left")
+        self.assertEqual(ui.resize_edge(197, 200), "right")
+        self.assertIsNone(ui.resize_edge(100, 200))
+
+    def test_right_edge_keeps_the_left_side_in_place(self):
+        self.assertEqual(ui.resized("right", 50, 200, 40), (50, 240))
+
+    def test_left_edge_keeps_the_right_side_in_place(self):
+        self.assertEqual(ui.resized("left", 50, 200, -40), (10, 240))
+        self.assertEqual(ui.resized("left", 50, 200, 30), (80, 170))
+
+    def test_width_stays_within_bounds(self):
+        self.assertEqual(ui.resized("right", 50, 200, 1000), (50, ui.config.MAX_WIDTH))
+        self.assertEqual(ui.resized("right", 50, 200, -1000), (50, ui.config.MIN_WIDTH))
+        x, width = ui.resized("left", 50, 200, 1000)
+        self.assertEqual((x + width, width), (250, ui.config.MIN_WIDTH))
+
+    def test_numbers_do_not_grow_with_the_window(self):
+        self.assertEqual(ui.text_room(600), ui.text_room(ui.config.DEFAULTS["width"]))
+        self.assertLess(ui.text_room(140), ui.text_room(200))
+
+
+class EasingTest(unittest.TestCase):
+
+    def test_gauge_moves_towards_the_value(self):
+        self.assertTrue(0.0 < ui.eased(0.0, 1.0) < 1.0)
+        self.assertTrue(0.0 < ui.eased(1.0, 0.0) < 1.0)
+
+    def test_gauge_settles_on_the_value(self):
+        shown = 0.0
+        for _ in range(100):
+            shown = ui.eased(shown, 0.73)
+        self.assertEqual(shown, 0.73)
+
+
 if __name__ == "__main__":
     unittest.main()

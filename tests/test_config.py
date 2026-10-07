@@ -36,6 +36,7 @@ class ConfigTest(unittest.TestCase):
         values = config.load()
         self.assertEqual(values["probes"], ["cpu"])
         self.assertFalse(values["compact"])
+        self.assertFalse(values["smooth"])
 
     def test_reads_the_list_of_metrics(self):
         self.write({"probes": ["ram", "cpu"], "compact": True})
