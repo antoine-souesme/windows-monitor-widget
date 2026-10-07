@@ -28,6 +28,7 @@ DEFAULTS = {
     "always_on_top": True,
     "probes": ["cpu"],      # keys of the displayed metrics (see probes.py)
     "compact": False,       # small lines: caption and graph, number and gauge
+    "smooth": False,        # gauges glide between samples, at a CPU cost
 }
 # Every metric adds its own choices here (see probes.Option).
 DEFAULTS.update(probes.option_defaults())
@@ -94,6 +95,7 @@ def _sanitize(values):
             values[key] = None
     values["always_on_top"] = bool(values.get("always_on_top", True))
     values["compact"] = bool(values.get("compact", False))
+    values["smooth"] = bool(values.get("smooth", False))
     # A choice that no longer exists falls back to the default of its metric.
     for cls in probes.options():
         for option in cls.options:

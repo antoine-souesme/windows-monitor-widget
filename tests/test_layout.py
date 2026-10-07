@@ -66,5 +66,18 @@ class ResizeTest(unittest.TestCase):
         self.assertLess(ui.text_room(140), ui.text_room(200))
 
 
+class EasingTest(unittest.TestCase):
+
+    def test_gauge_moves_towards_the_value(self):
+        self.assertTrue(0.0 < ui.eased(0.0, 1.0) < 1.0)
+        self.assertTrue(0.0 < ui.eased(1.0, 0.0) < 1.0)
+
+    def test_gauge_settles_on_the_value(self):
+        shown = 0.0
+        for _ in range(100):
+            shown = ui.eased(shown, 0.73)
+        self.assertEqual(shown, 0.73)
+
+
 if __name__ == "__main__":
     unittest.main()
