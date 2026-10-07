@@ -35,6 +35,7 @@ BLOCK_SIZES = [22, 18, 15, 12, 10]    # font sizes tried for the large number
 COMPACT_SIZES = [10, 9, 8, 7]
 PREFIX_SIZE = 13         # the mark before a number, never resized with it
 PREFIX_GAP = 5           # empty space between that mark and the number
+RESIZE_BORDER = 6        # strip along the sides that resizes instead of moving
 EMPTY_HEIGHT = 60        # height used when no metric is selected
 EMPTY_TEXT = "Veuillez sélectionner une métrique à afficher"
 
@@ -78,6 +79,30 @@ def text_width(text, font):
         return _bold(font[1]).measure(text)
     except tk.TclError:
         return 0
+
+
+def resize_edge(x, width):
+    """Side grabbed by a click at `x` inside the window, None in the middle."""
+    if x < RESIZE_BORDER:
+        return "left"
+    if x >= width - RESIZE_BORDER:
+        return "right"
+    return None
+
+
+def resized(edge, x, width, moved):
+    """Left position and width after dragging `edge` by `moved` pixels. The
+    opposite side stays where it is."""
+    if edge == "left":
+        new_width = max(config.MIN_WIDTH, min(width - moved, config.MAX_WIDTH))
+        return x + width - new_width, new_width
+    return x, max(config.MIN_WIDTH, min(width + moved, config.MAX_WIDTH))
+
+
+def text_room(width):
+    """Window width the numbers are sized for: widening the window only
+    stretches the drawings, narrowing it may shrink the numbers to fit."""
+    return min(width, config.DEFAULTS["width"])
 
 
 def columns(left, right, count):
@@ -125,6 +150,7 @@ class WidgetWindow(tk.Toplevel):
         self.histories = {}
         self._apply_selection(values["probes"])
         self._drag_origin = None
+        self._edge = None
         self._dragged = False
         self._job = None
 
@@ -165,6 +191,8 @@ class WidgetWindow(tk.Toplevel):
         self.canvas.bind("<B1-Motion>", self._drag)
         self.canvas.bind("<ButtonRelease-1>", self._end_drag)
         self.canvas.bind("<Button-3>", self._open_menu)
+        # The sides resize: the pointer says so when it passes over them.
+        self.canvas.bind("<Motion>", self._update_cursor)
 
     def _build_menu(self):
         self.startup_var = tk.BooleanVar(value=system.is_startup_enabled())
@@ -307,9 +335,11 @@ class WidgetWindow(tk.Toplevel):
         self.canvas.create_text(MARGIN, top + 6, anchor="w", text=probe.label,
                                 fill=CAPTION, font=("Segoe UI", 9))
         areas = columns(MARGIN, width - MARGIN, len(values))
+        rooms = columns(MARGIN, text_room(width) - MARGIN, len(values))
         for index, (x0, x1) in enumerate(areas):
+            room = rooms[index][1] - rooms[index][0]
             prefix, prefix_font, font = self._fonts(probe, index, texts[index],
-                                                    x1 - x0, BLOCK_SIZES,
+                                                    room, BLOCK_SIZES,
                                                     PREFIX_SIZE)
             x = x0
             if prefix:
@@ -343,7 +373,7 @@ class WidgetWindow(tk.Toplevel):
                              text_width(caption, ("Segoe UI", 9)),
                              text_width(self._template(probe, texts[column]),
                                         ("Segoe UI", COMPACT_SIZES[0])))
-        room = (self.values["width"] - 2 * MARGIN) * LEGEND_SHARE
+        room = (text_room(self.values["width"]) - 2 * MARGIN) * LEGEND_SHARE
         return min(widest, room)
 
     def _draw_compact_line(self, probe, column, top, legend):
@@ -440,27 +470,48 @@ class WidgetWindow(tk.Toplevel):
                                    smooth=True, splinesteps=12)
 
     # ------------------------------------------------------------------
-    # Dragging
+    # Dragging and resizing
     # ------------------------------------------------------------------
 
+    def _update_cursor(self, event):
+        if self._drag_origin is not None:
+            return
+        edge = resize_edge(event.x, self.values["width"])
+        self.canvas.configure(cursor="sb_h_double_arrow" if edge else "")
+
     def _start_drag(self, event):
-        self._drag_origin = (event.x_root - self.winfo_x(),
-                             event.y_root - self.winfo_y())
+        self._edge = resize_edge(event.x, self.values["width"])
+        if self._edge:
+            self._drag_origin = (event.x_root, self.winfo_x(),
+                                 self.values["width"])
+        else:
+            self._drag_origin = (event.x_root - self.winfo_x(),
+                                 event.y_root - self.winfo_y())
         self._dragged = False
 
     def _drag(self, event):
         if self._drag_origin is None:
             return
-        offset_x, offset_y = self._drag_origin
-        self.geometry("+{}+{}".format(event.x_root - offset_x,
-                                      event.y_root - offset_y))
+        if self._edge:
+            start, x, width = self._drag_origin
+            x, width = resized(self._edge, x, width, event.x_root - start)
+            if width != self.values["width"]:
+                self.values["width"] = width
+                self.canvas.configure(width=width)
+                self.geometry("{}x{}+{}+{}".format(width, self._height(), x,
+                                                   self.winfo_y()))
+                self._draw()
+        else:
+            offset_x, offset_y = self._drag_origin
+            self.geometry("+{}+{}".format(event.x_root - offset_x,
+                                          event.y_root - offset_y))
         self._dragged = True
 
     def _end_drag(self, _event):
         self._drag_origin = None
         if not self._dragged:
             return
-        # The file is only written once the move is over.
+        # The file is only written once the move or the resize is over.
         self.values["x"] = self.winfo_x()
         self.values["y"] = self.winfo_y()
         config.save(self.values)

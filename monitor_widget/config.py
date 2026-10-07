@@ -16,6 +16,10 @@ APP_NAME = "MonitorWidget"
 # Folder used before the rename: read once so settings survive an update.
 LEGACY_APP_NAME = "CpuWidget"
 
+# Bounds of the width the user can give the window.
+MIN_WIDTH = 140
+MAX_WIDTH = 600
+
 # Values used on first launch, or when the file cannot be used.
 DEFAULTS = {
     "x": None,              # left position in pixels (None = center)
@@ -80,7 +84,7 @@ def load():
 def _sanitize(values):
     """Bring out-of-range values back into sane bounds."""
     try:
-        values["width"] = max(140, min(int(values["width"]), 600))
+        values["width"] = max(MIN_WIDTH, min(int(values["width"]), MAX_WIDTH))
     except (TypeError, ValueError):
         values["width"] = DEFAULTS["width"]
     for key in ("x", "y"):
