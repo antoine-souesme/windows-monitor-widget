@@ -92,6 +92,36 @@ class NetworkTest(unittest.TestCase):
         self.assertGreaterEqual(probe.read()[0], 0.0)
 
 
+class GpuTest(unittest.TestCase):
+
+    ENGINE_3D = "luid_0x00000000_0x0000D1B5_phys_0_eng_0_engtype_3D"
+    ENGINE_VIDEO = "luid_0x00000000_0x0000D1B5_phys_0_eng_3_engtype_VideoDecode"
+
+    def test_the_processes_of_one_engine_add_up(self):
+        samples = [("pid_10_" + self.ENGINE_3D, 20.0),
+                   ("pid_42_" + self.ENGINE_3D, 15.0),
+                   ("pid_10_" + self.ENGINE_VIDEO, 30.0)]
+        self.assertEqual(probes.busiest_engine(samples), 35.0)
+
+    def test_the_busiest_engine_wins(self):
+        samples = [("pid_10_" + self.ENGINE_3D, 5.0),
+                   ("pid_10_" + self.ENGINE_VIDEO, 60.0)]
+        self.assertEqual(probes.busiest_engine(samples), 60.0)
+
+    def test_the_value_never_goes_past_a_hundred(self):
+        samples = [("pid_1_" + self.ENGINE_3D, 70.0),
+                   ("pid_2_" + self.ENGINE_3D, 50.0)]
+        self.assertEqual(probes.busiest_engine(samples), 100.0)
+
+    def test_no_engine_reads_as_idle(self):
+        self.assertEqual(probes.busiest_engine([]), 0.0)
+
+    def test_an_unavailable_counter_reads_as_idle(self):
+        probe = probes.GpuProbe()
+        probe._query = None
+        self.assertEqual(probe.read(), 0.0)
+
+
 class OptionTest(unittest.TestCase):
 
     def test_every_option_has_a_default_among_its_choices(self):
