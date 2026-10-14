@@ -10,8 +10,6 @@ import ctypes
 import os
 import sys
 
-from . import config
-
 IS_WINDOWS = sys.platform.startswith("win")
 
 # Handle kept alive for the whole run of the program.
@@ -46,6 +44,8 @@ def acquire_single_instance():
         return kernel32.GetLastError() != _ERROR_ALREADY_EXISTS
     try:
         import fcntl
+        # Imported here: config needs the metrics, which need this module.
+        from . import config
         os.makedirs(config.config_dir(), exist_ok=True)
         _lock = open(os.path.join(config.config_dir(), "lock"), "w")
         fcntl.flock(_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -114,6 +114,95 @@ def is_point_on_screen(x, y, window=None):
     if window is None:
         return True
     return 0 <= x < window.winfo_screenwidth() and 0 <= y < window.winfo_screenheight()
+
+
+# --------------------------------------------------------------------------
+# GPU engines (performance counters, the source of the Task Manager)
+# --------------------------------------------------------------------------
+
+_GPU_COUNTER = "\\GPU Engine(*)\\Utilization Percentage"
+_PDH_FMT_DOUBLE = 0x00000200
+_PDH_FMT_NOCAP100 = 0x00008000
+_PDH_MORE_DATA = 0x800007D2
+_PDH_CSTATUS_NEW_DATA = 1
+
+
+class _PdhValue(ctypes.Union):
+    _fields_ = [("longValue", ctypes.c_long),
+                ("doubleValue", ctypes.c_double),
+                ("largeValue", ctypes.c_longlong)]
+
+
+class _PdhCounterValue(ctypes.Structure):
+    _fields_ = [("CStatus", ctypes.c_ulong), ("value", _PdhValue)]
+
+
+class _PdhCounterItem(ctypes.Structure):
+    _fields_ = [("szName", ctypes.c_wchar_p), ("FmtValue", _PdhCounterValue)]
+
+
+class GpuQuery:
+    """Open query on the load of every GPU engine of every process."""
+
+    def __init__(self, pdh, query, counter):
+        self._pdh = pdh
+        self._query = query
+        self._counter = counter
+
+
+def open_gpu_query():
+    """Start watching the GPU engines, or None when that is impossible
+    (not Windows, no GPU counters, old Windows version...)."""
+    if not IS_WINDOWS:
+        return None
+    try:
+        pdh = ctypes.windll.pdh
+        query = ctypes.c_void_p()
+        if pdh.PdhOpenQueryW(None, None, ctypes.byref(query)) != 0:
+            return None
+        counter = ctypes.c_void_p()
+        if pdh.PdhAddEnglishCounterW(query, _GPU_COUNTER, None,
+                                     ctypes.byref(counter)) != 0:
+            pdh.PdhCloseQuery(query)
+            return None
+        # A rate needs two samples: this first one only sets the reference.
+        pdh.PdhCollectQueryData(query)
+        return GpuQuery(pdh, query, counter)
+    except (AttributeError, OSError):
+        return None
+
+
+def read_gpu_engines(gpu):
+    """Load of every (process, engine) pair since the previous call, as a list
+    of (instance name, percentage). Empty when nothing can be read."""
+    if gpu is None:
+        return []
+    try:
+        pdh = gpu._pdh
+        if pdh.PdhCollectQueryData(gpu._query) != 0:
+            return []
+        size = ctypes.c_ulong(0)
+        count = ctypes.c_ulong(0)
+        flags = _PDH_FMT_DOUBLE | _PDH_FMT_NOCAP100
+        status = pdh.PdhGetFormattedCounterArrayW(
+            gpu._counter, flags, ctypes.byref(size), ctypes.byref(count), None)
+        if ctypes.c_ulong(status).value != _PDH_MORE_DATA or not size.value:
+            return []
+        buffer = ctypes.create_string_buffer(size.value)
+        if pdh.PdhGetFormattedCounterArrayW(
+                gpu._counter, flags, ctypes.byref(size), ctypes.byref(count),
+                buffer) != 0:
+            return []
+        items = ctypes.cast(buffer, ctypes.POINTER(_PdhCounterItem))
+        samples = []
+        for index in range(count.value):
+            item = items[index]
+            if item.FmtValue.CStatus > _PDH_CSTATUS_NEW_DATA or not item.szName:
+                continue
+            samples.append((item.szName, item.FmtValue.value.doubleValue))
+        return samples
+    except (AttributeError, OSError, ValueError):
+        return []
 
 
 # --------------------------------------------------------------------------

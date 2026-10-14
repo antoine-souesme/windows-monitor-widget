@@ -16,6 +16,8 @@ from collections import deque
 
 import psutil
 
+from . import system
+
 # Available probes, in declaration order.
 PROBES = {}
 
@@ -144,6 +146,36 @@ class CpuProbe(Probe):
 
     def read(self):
         return psutil.cpu_percent(interval=None)
+
+
+def busiest_engine(samples):
+    """Load of the busiest GPU engine, as the Task Manager shows it: the
+    processes sharing one engine add up, then the busiest engine wins."""
+    engines = {}
+    for name, value in samples:
+        # "pid_1234_luid_..._eng_0_engtype_3D": the engine is what follows
+        # the process id.
+        engine = name[name.find("luid_"):] if "luid_" in name else name
+        engines[engine] = engines.get(engine, 0.0) + max(0.0, value)
+    return min(max(engines.values(), default=0.0), 100.0)
+
+
+@register
+class GpuProbe(Probe):
+    """Load of the graphics card, whatever its brand. Reads 0 when Windows
+    gives no GPU counters (or outside Windows)."""
+
+    key = "gpu"
+    label = "GPU"
+
+    def __init__(self):
+        self._query = None
+
+    def start(self):
+        self._query = system.open_gpu_query()
+
+    def read(self):
+        return busiest_engine(system.read_gpu_engines(self._query))
 
 
 @register
