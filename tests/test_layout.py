@@ -20,8 +20,8 @@ class WindowHeightTest(unittest.TestCase):
         self.assertEqual(ui.window_height(3, False), 250)
 
     def test_compact_mode_is_shorter(self):
-        self.assertEqual(ui.window_height(1, True), 54)
-        self.assertEqual(ui.window_height(2, True), 94)
+        self.assertEqual(ui.window_height(1, True), 56)
+        self.assertEqual(ui.window_height(2, True), 98)
 
     def test_no_metric_shows_the_empty_frame(self):
         self.assertEqual(ui.window_height(0, False), ui.EMPTY_HEIGHT)
@@ -64,6 +64,15 @@ class ResizeTest(unittest.TestCase):
     def test_numbers_do_not_grow_with_the_window(self):
         self.assertEqual(ui.text_room(600), ui.text_room(ui.config.DEFAULTS["width"]))
         self.assertLess(ui.text_room(140), ui.text_room(200))
+
+
+class BlendTest(unittest.TestCase):
+
+    def test_blend_mixes_towards_the_background(self):
+        self.assertEqual(ui.blend("#ff0000", "#000000", 0.5), "#7f0000")
+        self.assertEqual(ui.blend("#ffffff", "#000000", 0.0), "#000000")
+        self.assertEqual(ui.blend("#123456", "#000000", 1.0), "#123456")
+        self.assertEqual(ui.blend("#ffffff", "#000000", 2.0), "#ffffff")
 
 
 class EasingTest(unittest.TestCase):

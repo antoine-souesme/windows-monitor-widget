@@ -13,6 +13,7 @@ BACKGROUND = "#1e1f24"
 BORDER = "#3a3d46"
 TEXT = "#f2f3f5"
 CAPTION = "#9aa0aa"
+OUTLINE = "#000000"            # dark rim keeping texts readable over a graph
 TRANSPARENT = "#ff00fe"        # unlikely tint, turned invisible by Windows
 SCALE = [(0.0, (0x4c, 0xaf, 0x50)),   # green
          (0.6, (0xff, 0x98, 0x00)),   # orange
@@ -27,12 +28,12 @@ MARGIN = 12
 PADDING = 10             # empty space above the first block and below the last
 BLOCK_HEIGHT = 70        # one metric: caption, large number, graph
 BLOCK_GAP = 10
-COMPACT_HEIGHT = 34      # one value: caption and graph, then number and gauge
+COMPACT_HEIGHT = 36      # one value: graph with its texts over it, then gauge
 COMPACT_GAP = 6
-COMPACT_GRAPH = 18       # height of the graph row, the gauge row takes the rest
+COMPACT_GRAPH = 24       # height of the graph row, the gauge row takes the rest
+GAUGE_GAP = 4            # empty space between that graph and the gauge
 GAUGE_THICKNESS = 6      # height of the bar showing the current value
-LEGEND_GAP = 8           # empty space between the left texts and the drawings
-LEGEND_SHARE = 0.5       # the left texts never take more of the width than that
+FILL_SHARE = 0.35        # share of the value color in the area under a curve
 COLUMN_GAP = 10          # empty space between two values of the same metric
 BLOCK_SIZES = [22, 18, 15, 12, 10]    # font sizes tried for the large number
 COMPACT_SIZES = [10, 9, 8, 7]
@@ -136,6 +137,16 @@ def eased(shown, target):
 def _blank_history(count):
     """Sixty empty samples, so a new graph starts flat instead of jumping."""
     return deque([(0.0,) * count] * HISTORY_POINTS, maxlen=HISTORY_POINTS)
+
+
+def blend(color, background, share):
+    """Mix `share` of `color` with the rest of `background`: tkinter has no
+    transparency, so a faded color stands for a see-through one."""
+    share = max(0.0, min(share, 1.0))
+    front = [int(color[i:i + 2], 16) for i in (1, 3, 5)]
+    back = [int(background[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#%02x%02x%02x" % tuple(int(f * share + b * (1.0 - share))
+                                   for f, b in zip(front, back))
 
 
 def load_color(ratio):
@@ -360,11 +371,10 @@ class WidgetWindow(tk.Toplevel):
             block = COMPACT_HEIGHT if compact else BLOCK_HEIGHT
             gap = COMPACT_GAP if compact else BLOCK_GAP
             top = PADDING
-            legend = self._legend_width() if compact else 0
             for probe in self.probes:
                 if compact:
                     for column in range(len(self._last(probe))):
-                        self._draw_compact_line(probe, column, top, legend)
+                        self._draw_compact_line(probe, column, top, 0, width)
                         top += block + gap
                 else:
                     self._draw_block(probe, top, block)
@@ -408,27 +418,20 @@ class WidgetWindow(tk.Toplevel):
         except Exception:
             return [probe.label] * len(self._last(probe))
 
-    def _legend_width(self):
-        """Width of the left texts in compact mode, shared by every line so
-        the graphs and gauges start at the same place."""
-        widest = 0
-        for probe in self.probes:
-            values = self._last(probe)
-            texts = probe.texts(values)
-            captions = self._captions(probe)
-            for column in range(len(values)):
-                caption = captions[column] if column < len(captions) else ""
-                widest = max(widest,
-                             text_width(caption, ("Segoe UI", 9)),
-                             text_width(self._template(probe, texts[column]),
-                                        ("Segoe UI", COMPACT_SIZES[0])))
-        room = (text_room(self.values["width"]) - 2 * MARGIN) * LEGEND_SHARE
-        return min(widest, room)
+    def _outlined_text(self, x, y, text, font, anchor):
+        """Light text rimmed with a dark outline, readable over any curve:
+        the text is drawn dark one pixel away all around, then on top."""
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx or dy:
+                    self.canvas.create_text(x + dx, y + dy, anchor=anchor,
+                                            text=text, fill=OUTLINE, font=font)
+        self.canvas.create_text(x, y, anchor=anchor, text=text, fill=TEXT,
+                                font=font)
 
-    def _draw_compact_line(self, probe, column, top, legend):
-        """Caption then graph on a first row, number then gauge on a second
-        one: the texts never sit on top of the drawings."""
-        width = self.values["width"]
+    def _draw_compact_line(self, probe, column, top, x0, x1):
+        """Graph across the whole line with the name on its left and the
+        number on its right written over it, then the gauge underneath."""
         values = self._last(probe)
         value = values[column]
         texts = probe.texts(values)
@@ -442,22 +445,19 @@ class WidgetWindow(tk.Toplevel):
         else:
             ratio = self.gauges[(probe.key, column)] = target
         color = probe.tint(column) or load_color(ratio)
-        left = MARGIN + legend + LEGEND_GAP
-        right = width - MARGIN
-        bottom = top + COMPACT_HEIGHT
+        left = x0 + MARGIN
+        right = x1 - MARGIN
+        bottom = top + COMPACT_GRAPH
 
-        self.canvas.create_text(MARGIN, top + COMPACT_GRAPH // 2, anchor="w",
-                                text=caption, fill=CAPTION,
-                                font=("Segoe UI", 9))
-        self._draw_graph(probe, column, left, top, right, top + COMPACT_GRAPH,
-                         color)
-
-        middle = (top + COMPACT_GRAPH + bottom) // 2
-        font = fitting_font(self._template(probe, texts[column]), legend,
-                            COMPACT_SIZES)
-        self.canvas.create_text(MARGIN, middle, anchor="w", text=texts[column],
-                                fill=TEXT, font=font)
-        self._draw_gauge(ratio, left, middle, right, color)
+        self._draw_graph(probe, column, left, top, right, bottom, color,
+                         baseline=False, fill=blend(color, BACKGROUND, FILL_SHARE))
+        middle = (top + bottom) // 2
+        self._outlined_text(left, middle, caption, ("Segoe UI", 10, "bold"), "w")
+        font = fitting_font(self._template(probe, texts[column]),
+                            (right - left) // 2, COMPACT_SIZES)
+        self._outlined_text(right, middle, texts[column], font, "e")
+        gauge = (bottom + GAUGE_GAP + top + COMPACT_HEIGHT) // 2
+        self._draw_gauge(ratio, left, gauge, right, color)
 
     def _draw_gauge(self, ratio, x0, middle, x1, color):
         """Bar filled as far as the current value goes."""
@@ -498,8 +498,10 @@ class WidgetWindow(tk.Toplevel):
         """Color of one column: the metric decides, or the green to red scale."""
         return probe.tint(column) or load_color(probe.ratio(value, column))
 
-    def _draw_graph(self, probe, column, x0, y0, x1, y1, color, baseline=True):
-        """Scrolling graph of the last 60 samples of one column."""
+    def _draw_graph(self, probe, column, x0, y0, x1, y1, color, baseline=True,
+                    fill=None):
+        """Scrolling graph of the last 60 samples of one column. A `fill`
+        color gives the area a plain tint and the curve a bolder line."""
         if baseline:
             self.canvas.create_line(x0, y1, x1, y1, fill=BORDER)
         samples = [sample[column] for sample in self.histories[probe.key]
@@ -513,9 +515,14 @@ class WidgetWindow(tk.Toplevel):
             points.append(x0 + index * step)
             points.append(y1 - probe.ratio(sample, column) * span)
         # Shaded area first, then the curve itself.
-        self.canvas.create_polygon(points + [x1, y1, x0, y1],
-                                   fill=color, outline="", stipple="gray25")
-        self.canvas.create_line(points, fill=color, width=1.5, smooth=True)
+        if fill is None:
+            self.canvas.create_polygon(points + [x1, y1, x0, y1],
+                                       fill=color, outline="", stipple="gray25")
+        else:
+            self.canvas.create_polygon(points + [x1, y1, x0, y1],
+                                       fill=fill, outline="")
+        self.canvas.create_line(points, fill=color,
+                                width=1.5 if fill is None else 2, smooth=True)
 
     def _rounded_rectangle(self, x0, y0, x1, y1, radius, fill, outline):
         """Rounded rectangle drawn as a smoothed polygon."""
