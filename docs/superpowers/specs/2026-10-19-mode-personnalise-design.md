@@ -57,11 +57,37 @@ peut être choisie dans plusieurs cases.
 
 Une case vide reste un emplacement vide de la grille.
 
+### Nouveau dessin des lignes compactes
+
+En mode Compact comme en mode Personnalisé, une valeur est redessinée
+d'après la maquette de l'utilisateur
+(`docs/superpowers/specs/2026-10-19-ligne-compacte.png`) :
+
+- le graphique des 60 dernières secondes occupe tout le fond de la ligne,
+  sur toute sa largeur ;
+- sa courbe est un trait plein de la couleur de la valeur, et la surface
+  sous la courbe est remplie de la même couleur, atténuée comme par
+  transparence ;
+- le nom de la valeur (« CPU ») est écrit à gauche et le nombre (« 70% »)
+  à droite, par‑dessus le graphique, en blanc cerné d'un contour sombre pour
+  rester lisible quelle que soit la courbe derrière ;
+- la jauge reste en dessous, sur toute la largeur, comme aujourd'hui.
+
+Le mode Normal ne change pas.
+
+Choix faits par moi : tkinter ne gère pas la transparence d'une forme, la
+surface est donc remplie d'une couleur calculée en mélangeant la couleur de
+la valeur avec le fond (environ un tiers de la couleur), ce qui donne le
+même effet sans hachures ; le contour des textes est obtenu en dessinant le
+texte en sombre légèrement décalé tout autour, puis en blanc par‑dessus. Le
+nom et le nombre ne partageant plus de colonne de gauche, la largeur de
+légende commune disparaît.
+
 ## Hors du périmètre
 
 Pas de glisser‑déposer des cases sur le widget lui‑même, pas de cases de
 tailles différentes (fusion de cases), pas de modèles de disposition
-proposés. Les modes Normal et Compact ne changent pas d'aspect.
+proposés. Le mode Normal ne change pas d'aspect.
 
 ## Contraintes
 
@@ -107,8 +133,6 @@ propre à une métrique dans `ui.py`. Une nouvelle métrique ajoutée avec
   plusieurs cases l'affichent ; elles partagent le même historique.
 - **Fenêtre unique.** « Options… » ramène la fenêtre au premier plan si
   elle est déjà ouverte au lieu d'en ouvrir une seconde.
-- **Légendes.** Comme en compact, la largeur des textes de gauche est
-  commune à toutes les cases pour que graphiques et jauges s'alignent.
 
 ## Laissé au constructeur
 

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a third display mode ("Personnalisé") drawing a free grid of compact cells, and move every setting from the context menu into an options window.
+**Goal:** Add a third display mode ("Personnalisé") drawing a free grid of compact cells, redraw the compact line (graph as background, outlined texts over it), and move every setting from the context menu into an options window.
 
 **Architecture:** Metrics describe every value they can measure (`slots()`), a new pure module `grid.py` holds the grid arithmetic (cell ids, resizing, first fill, widths), `config.py` stores `mode` and the grid, `ui.py` draws the grid with the existing compact line, and a new `options.py` holds the `tk.Toplevel` options window calling public setters on the widget.
 
@@ -27,8 +27,8 @@
 - A config whose `grid_cells` name an unknown metric, a bad index (`"net:9"`), a non string, or a list of the wrong length: unknown cells become `""`, length is fixed to `columns × rows` (Task 3 test).
 - Shrinking then enlarging the grid: cells that stay keep their (row, column), new ones are empty (Task 2 test).
 - Six columns on a small screen: column width shrinks so the total fits, never below `MIN_WIDTH` (Task 2 test).
-- A custom grid whose cells are all empty: the window shows the empty frame text instead of an empty grid, and sampling reads no metric (Task 2 test on `needed_keys`, manual check in Task 4).
-- Leaving custom mode: the network option the user chose comes back and the graph history is restarted with the right number of values (manual check in Task 4, `configured_values` test in Task 1).
+- A custom grid whose cells are all empty: the window shows the empty frame text instead of an empty grid, and sampling reads no metric (Task 2 test on `needed_keys`, manual check in Task 5).
+- Leaving custom mode: the network option the user chose comes back and the graph history is restarted with the right number of values (manual check in Task 5, `configured_values` test in Task 1).
 
 ---
 
@@ -209,14 +209,49 @@ Update `test_save_then_load` to use `values["mode"] = "compact"` and assert it r
 
 ---
 
-### Task 4: The widget draws the custom grid
+### Task 4: New compact line
+
+**Files:**
+- Modify: `monitor_widget/ui.py` (`_draw_compact_line`, `_legend_width` removed, `_draw_graph`, constants)
+- Test: `tests/test_layout.py`
+
+Reference drawing: `docs/superpowers/specs/2026-10-19-ligne-compacte.png`. Used by compact mode now, by custom cells in Task 5; normal mode untouched.
+
+**Interfaces:**
+- Produces:
+  - `blend(color: str, background: str, share: float) -> str` (module level) — `"#rrggbb"` mixing `share` of `color` with `1 - share` of `background`, `share` clamped to 0..1, each channel truncated with `int()`.
+  - `FILL_SHARE = 0.35` — share of the value color in the area under the curve.
+  - `OUTLINE = "#000000"` — color of the text outline, drawn at the 8 one pixel offsets around the text before the text itself in `TEXT`.
+  - `WidgetWindow._outlined_text(x: int, y: int, text: str, font, anchor: str) -> None`.
+  - `WidgetWindow._draw_compact_line(probe, column: int, top: int, x0: int, x1: int) -> None` — area from `x0 + MARGIN` to `x1 - MARGIN`: graph from `top` to `top + COMPACT_GRAPH`, filled with `blend(color, BACKGROUND, FILL_SHARE)` (no stipple) and topped by a solid `width=2` line in `color`, no baseline; caption (`("Segoe UI", 10, "bold")`) outlined, anchored `"w"` at the left; number outlined, anchored `"e"` at the right, font from `fitting_font(template, half of the area width, COMPACT_SIZES)`; both vertically centred on the graph; gauge under it as today. `COMPACT_GRAPH` becomes 24 and `COMPACT_HEIGHT` 36 (graph, 4 px gap, gauge); update `test_compact_mode_is_shorter` expectations accordingly.
+  - `_draw_graph` gains `fill: str | None = None` (when given, a plain fill replaces the stipple) so normal mode keeps its current look.
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+def test_blend_mixes_towards_the_background(self):
+    self.assertEqual(ui.blend("#ff0000", "#000000", 0.5), "#7f0000")
+    self.assertEqual(ui.blend("#ffffff", "#000000", 0.0), "#000000")
+    self.assertEqual(ui.blend("#123456", "#000000", 1.0), "#123456")
+    self.assertEqual(ui.blend("#ffffff", "#000000", 2.0), "#ffffff")
+```
+
+- [ ] **Step 2: Run** `python -m unittest tests.test_layout -v` — Expected: FAIL (`blend` not defined).
+- [ ] **Step 3: Implement** the interfaces above; compact mode calls `_draw_compact_line(probe, column, top, 0, window width)`.
+- [ ] **Step 4: Run** `python -m unittest discover -s tests` — Expected: all PASS.
+- [ ] **Step 5: Manual check** `python main.py` in compact mode with CPU and network: graph fills each line behind the texts, solid line on top of a faded area, name left and number right readable over a high curve, gauge below; normal mode unchanged.
+- [ ] **Step 6: Commit** `git commit -am "Redessine les lignes du mode compact"`
+
+---
+
+### Task 5: The widget draws the custom grid
 
 **Files:**
 - Modify: `monitor_widget/ui.py`
 - Test: `tests/test_layout.py`
 
 **Interfaces:**
-- Consumes: Tasks 1–3.
+- Consumes: Tasks 1–3; `_draw_compact_line(probe, column, top, x0, x1)` (Task 4).
 - Produces, public methods of `WidgetWindow` used by the options window (each stores the value, saves the config once, and redraws/resizes):
   - `set_mode(mode: str) -> None` — on the first switch to `"custom"` while `values["grid_cells"] == []`, fill the grid with `grid.initial(grid.displayed_cells(self.values))`.
   - `set_probes(keys: list[str]) -> None`
@@ -232,7 +267,7 @@ Behaviour to implement:
 - Probes are configured through `probes.configured_values(self.values, custom)`; when the mode or an option changes, reconfigure every probe and restart a history whose column count changed (the existing logic of `_change_option`, moved into one `_reconfigure()` helper).
 - Displayed probes: `grid.needed_keys(values["grid_cells"])` in custom mode, `values["probes"]` otherwise, through the existing `_apply_selection`.
 - `_height()`: custom → `grid_height(rows)` when at least one cell is filled, `EMPTY_HEIGHT` otherwise.
-- `_draw()`: custom with no filled cell → the existing empty text; otherwise each filled cell at (row, column) is a compact line in the area `x0 = column × column_width`, `x1 = x0 + column_width`, `top = PADDING + row × (COMPACT_HEIGHT + COMPACT_GAP)`. Change `_draw_compact_line(probe, column, top, legend)` to `_draw_compact_line(probe, column, top, legend, x0, x1)` with the text starting at `x0 + MARGIN` and drawings ending at `x1 - MARGIN`. The legend width is shared by every cell, computed over the cells shown, with `text_room(column_width)` as the room. Gauges stay keyed by `(probe.key, column)`, so repeated cells share one gauge.
+- `_draw()`: custom with no filled cell → the existing empty text; otherwise each filled cell at (row, column) calls `_draw_compact_line(probe, column, top, x0, x1)` with `x0 = column × column_width`, `x1 = x0 + column_width`, `top = PADDING + row × (COMPACT_HEIGHT + COMPACT_GAP)`. Gauges stay keyed by `(probe.key, column)`, so repeated cells share one gauge.
 - Every geometry/canvas width call uses `window_width()` instead of `values["width"]`.
 - Resizing in custom mode: dragging an edge by `moved` pixels changes the column width through `resized(edge, x, column_width, moved // columns)`, then `grid.fit_column_width(..., self.winfo_screenwidth(), config.MIN_WIDTH, config.MAX_WIDTH)`; the window width is recomputed from it. `set_grid` also refits the column width.
 - `resize_edge` and `_update_cursor` receive `window_width()`.
@@ -252,7 +287,7 @@ def test_grid_rows_use_the_compact_height(self):
 
 ---
 
-### Task 5: Options window and two-entry context menu
+### Task 6: Options window and two-entry context menu
 
 **Files:**
 - Create: `monitor_widget/options.py`
@@ -260,7 +295,7 @@ def test_grid_rows_use_the_compact_height(self):
 - Modify: `CLAUDE.md` (layout table: `grid.py`, `options.py`; "Adding a metric": options now show in the options window, `slots()` / `custom_values` for multi value metrics)
 
 **Interfaces:**
-- Consumes: the `WidgetWindow` setters and `window_width()` (Task 4), `grid.choices()`, `grid.resized()`, `grid.MAX_SIZE` (Task 2), `probes.options()`, `probes.custom_hidden_options()` (Task 1), `system.is_packaged()`, `system.is_startup_enabled()`, `system.set_startup_enabled()`.
+- Consumes: the `WidgetWindow` setters and `window_width()` (Task 5), `grid.choices()`, `grid.resized()`, `grid.MAX_SIZE` (Task 2), `probes.options()`, `probes.custom_hidden_options()` (Task 1), `system.is_packaged()`, `system.is_startup_enabled()`, `system.set_startup_enabled()`.
 - Produces: `class OptionsWindow(tk.Toplevel)` built as `OptionsWindow(widget)`; `WidgetWindow.open_options()` creates it, or `deiconify()` + `lift()` + `focus_force()` on the existing one; the window clears the widget's reference on `WM_DELETE_WINDOW`.
 
 Layout (ttk, `padding` around frames, title `"Monitor Widget — Options"`, not resizable): `LabelFrame "Affichage"` with three `Radiobutton`s → `widget.set_mode`. Below, one frame swapped with `pack_forget()` on mode change: in normal/compact `LabelFrame "Métriques affichées"` with one `Checkbutton` per `probes.PROBES` entry → `widget.set_probes(selected keys in registry order)`; in custom `LabelFrame "Grille mode personnalisé"` with two `Spinbox`es `"Colonnes"` / `"Rangs"` (`from_=1, to=grid.MAX_SIZE`, `state="readonly"`) and a sub frame of read only `Combobox`es showing the labels of `grid.choices()`, rebuilt whenever the size changes (`grid.resized` keeps the choices) and calling `widget.set_grid` on every change. `LabelFrame "Options des métriques"`: one row per option (metric label, read only `Combobox` of the French choice labels) → `widget.set_option`; rows whose key is in `custom_hidden_options()` hidden in custom mode; the frame hidden when it has no visible row. `LabelFrame "Général"`: smooth, startup (absent when packaged; reads `system.is_startup_enabled()` when the window opens and shows the value `set_startup_enabled` returns), on top. Footer label `"Monitor Widget {}".format(__version__)`. The window follows `always_on_top` so it is never hidden behind a topmost widget.
