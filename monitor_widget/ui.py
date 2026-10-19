@@ -212,7 +212,7 @@ class WidgetWindow(tk.Toplevel):
     def _build_menu(self):
         self.startup_var = tk.BooleanVar(value=system.is_startup_enabled())
         self.on_top_var = tk.BooleanVar(value=self.values["always_on_top"])
-        self.compact_var = tk.BooleanVar(value=self.values["compact"])
+        self.compact_var = tk.BooleanVar(value=self.values["mode"] == "compact")
         self.smooth_var = tk.BooleanVar(value=self.values["smooth"])
         selected = [probe.key for probe in self.probes]
         self.probe_vars = {key: tk.BooleanVar(value=key in selected)
@@ -356,7 +356,7 @@ class WidgetWindow(tk.Toplevel):
                                     fill=CAPTION, font=("Segoe UI", 9),
                                     width=width - 2 * MARGIN, justify="center")
         else:
-            compact = self.values["compact"]
+            compact = self.values["mode"] == "compact"
             block = COMPACT_HEIGHT if compact else BLOCK_HEIGHT
             gap = COMPACT_GAP if compact else BLOCK_GAP
             top = PADDING
@@ -603,7 +603,7 @@ class WidgetWindow(tk.Toplevel):
         self._resize()
 
     def _toggle_compact(self):
-        self.values["compact"] = self.compact_var.get()
+        self.values["mode"] = "compact" if self.compact_var.get() else "normal"
         config.save(self.values)
         self._resize()
 
@@ -636,7 +636,7 @@ class WidgetWindow(tk.Toplevel):
         self.histories = histories
 
     def _height(self):
-        if self.values["compact"]:
+        if self.values["mode"] == "compact":
             # One pair of lines for each value a metric shows.
             return window_height(sum(len(self.histories[probe.key][-1])
                                      for probe in self.probes), True)
