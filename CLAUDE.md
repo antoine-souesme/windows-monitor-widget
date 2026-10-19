@@ -64,7 +64,7 @@ Windows machine at hand.
 
 Inside a package Windows owns the auto start (declared as a startup task in
 the manifest, turned off from the system settings), so `system.is_packaged()`
-hides that menu entry. `Identity` in the manifest must never change, and its
+hides that entry of the options window. `Identity` in the manifest must never change, and its
 version carries a fourth number that stays at zero.
 
 ## Adding a metric
