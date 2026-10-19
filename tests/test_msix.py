@@ -41,5 +41,16 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual("MonitorWidget.exe", application.get("Executable"))
 
 
+class IconTest(unittest.TestCase):
+
+    def test_the_notification_icon_ships_with_the_executable(self):
+        icon = os.path.join(ROOT, "monitor_widget", "icon.ico")
+        self.assertTrue(os.path.exists(icon))
+        with open(os.path.join(ROOT, "packaging", "monitor_widget.spec"),
+                  encoding="utf-8") as handle:
+            spec = handle.read()
+        self.assertIn('datas=[(ICON, "monitor_widget")]', spec)
+
+
 if __name__ == "__main__":
     unittest.main()

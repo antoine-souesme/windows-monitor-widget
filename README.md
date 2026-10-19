@@ -23,8 +23,12 @@ Python 3.8 or later, on Windows.
 
 - Drag it anywhere with the left mouse button.
 - Drag its left or right edge to change its width: only the graphs stretch.
-- Right click for the menu: displayed metrics (check boxes), compact mode,
-  start with Windows, always on top, quit.
+- Right click for the menu: options and quit. The options window holds
+  every setting: displayed metrics, display mode, language (English or
+  French), start with Windows, always on top, notification area icon.
+- The notification area icon brings the widget back when it is lost: a left
+  click puts it in front (and back in the middle of the screen when it is
+  off every display), a right click opens a small menu.
 
 ### On macOS
 
@@ -67,7 +71,8 @@ when the tag and `version.py` disagree.
 
 `monitor_widget/probes.py` holds one class per displayed value. A new metric
 is a subclass of `Probe` with a `key`, a `label` and a `read()` method,
-decorated with `@register`; it then shows up in the context menu on its own.
+decorated with `@register`; it then shows up in the options window on its
+own. Its `label` is French: add its English name to `monitor_widget/i18n.py`.
 
 ```python
 @register
@@ -85,9 +90,11 @@ class DiskProbe(Probe):
 | --- | --- |
 | `main.py` | entry point: single instance, hidden root window |
 | `monitor_widget/config.py` | reading and writing `config.json` |
-| `monitor_widget/system.py` | Win32 styles, displays, registry, mutex |
+| `monitor_widget/system.py` | Win32 styles, displays, GPU, registry, mutex, notification icon |
 | `monitor_widget/probes.py` | the measurable metrics |
+| `monitor_widget/i18n.py` | English translation of the French texts |
 | `monitor_widget/ui.py` | window, drawing, dragging, context menu |
+| `monitor_widget/icon.ico` | icon of the executable and of the notification area |
 | `monitor_widget/version.py` | version number, checked against the release tag |
 | `packaging/monitor_widget.spec` | PyInstaller recipe |
 | `packaging/msix/` | manifest and logos of the Microsoft Store package |

@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
-"""The widget window: drawing, dragging and context menu. The settings
-live in the options window (options.py)."""
+"""The widget window: drawing, dragging, context menu and notification area
+icon. The settings live in the options window (options.py)."""
 
 import tkinter as tk
 import tkinter.font as tkfont
 from collections import deque
 
-from . import config, grid, probes, system
+from . import config, grid, i18n, probes, system
+from .i18n import tr
 from .options import OptionsWindow
 
 # Palette.
@@ -174,6 +175,7 @@ class WidgetWindow(tk.Toplevel):
     def __init__(self, root, values):
         super().__init__(root)
         self.values = values
+        i18n.set_language(values["language"])
         self.probes = []
         self.histories = {}
         self._apply_selection(self._displayed_keys())
@@ -183,6 +185,7 @@ class WidgetWindow(tk.Toplevel):
         self._job = None
         self._frame = None
         self.options_window = None
+        self.menu = None
         self.gauges = {}         # (probe key, column) -> ratio on screen,
                                  # behind the latest value when animated
 
@@ -196,6 +199,14 @@ class WidgetWindow(tk.Toplevel):
         self._restore_position()
         self._draw()
         self._schedule_sample()
+        # Windows calls the icon back from inside its own message handling:
+        # the actions wait for Tk to be idle.
+        self.tray = system.TrayIcon(
+            "Monitor Widget",
+            lambda: self.after_idle(self.show_widget),
+            self._tray_menu)
+        if self.values["tray_icon"]:
+            self.tray.show()
 
     # ------------------------------------------------------------------
     # Setup
@@ -231,10 +242,20 @@ class WidgetWindow(tk.Toplevel):
         self.canvas.bind("<Motion>", self._update_cursor)
 
     def _build_menu(self):
+        """Context menu, built again when the language changes."""
+        if self.menu is not None:
+            self.menu.destroy()
         self.menu = tk.Menu(self, tearoff=0)
-        self.menu.add_command(label="Options…", command=self.open_options)
+        self.menu.add_command(label=tr("Options…"), command=self.open_options)
         self.menu.add_separator()
-        self.menu.add_command(label="Quitter", command=self.quit_widget)
+        self.menu.add_command(label=tr("Quitter"), command=self.quit_widget)
+
+    def _tray_menu(self):
+        """Entries of the notification area menu, in the current language."""
+        return [(tr("Afficher le widget"), lambda: self.after_idle(self.show_widget)),
+                (tr("Options…"), lambda: self.after_idle(self.open_options)),
+                None,
+                (tr("Quitter"), lambda: self.after_idle(self.quit_widget))]
 
     def _restore_position(self):
         """Restore the saved position, or recenter when it is off screen."""
@@ -310,7 +331,7 @@ class WidgetWindow(tk.Toplevel):
         self._rounded_rectangle(1, 1, width - 1, height - 1, 12,
                                 fill=BACKGROUND, outline=BORDER)
         if not self.probes:
-            self.canvas.create_text(width // 2, height // 2, text=EMPTY_TEXT,
+            self.canvas.create_text(width // 2, height // 2, text=tr(EMPTY_TEXT),
                                     fill=CAPTION, font=("Segoe UI", 9),
                                     width=width - 2 * MARGIN, justify="center")
         elif self._custom():
@@ -358,7 +379,7 @@ class WidgetWindow(tk.Toplevel):
         width = self.window_width()
         values = self._last(probe)
         texts = probe.texts(values)
-        self.canvas.create_text(MARGIN, top + 6, anchor="w", text=probe.label,
+        self.canvas.create_text(MARGIN, top + 6, anchor="w", text=tr(probe.label),
                                 fill=CAPTION, font=("Segoe UI", 9))
         areas = columns(MARGIN, width - MARGIN, len(values))
         rooms = columns(MARGIN, text_room(width) - MARGIN, len(values))
@@ -583,6 +604,19 @@ class WidgetWindow(tk.Toplevel):
             return
         self.options_window = OptionsWindow(self)
 
+    def show_widget(self):
+        """Bring the widget back in sight: in front of the other windows,
+        and back to the middle of the screen when it is no longer on one."""
+        self.deiconify()
+        self.values["x"], self.values["y"] = self.winfo_x(), self.winfo_y()
+        self._restore_position()
+        # A window that is not always on top only comes in front this way.
+        self.attributes("-topmost", True)
+        self.lift()
+        if not self.values["always_on_top"]:
+            self.attributes("-topmost", False)
+        config.save(self.values)
+
     # ------------------------------------------------------------------
     # Settings, applied at once and saved
     # ------------------------------------------------------------------
@@ -636,6 +670,36 @@ class WidgetWindow(tk.Toplevel):
         self.values["always_on_top"] = enabled
         self.attributes("-topmost", enabled)
         config.save(self.values)
+
+    def set_tray_icon(self, enabled):
+        self.values["tray_icon"] = enabled
+        if enabled:
+            self.tray.show()
+        else:
+            self.tray.hide()
+        config.save(self.values)
+
+    def set_language(self, language):
+        """Switch every text at once: the menu and the options window are
+        built again, and the widget redrawn."""
+        i18n.set_language(language)
+        self.values["language"] = i18n.language()
+        config.save(self.values)
+        self._build_menu()
+        self._draw()
+        window = self.options_window
+        if window is not None and window.winfo_exists():
+            # Rebuilt once the list that asked for it is done with its event.
+            self.after_idle(self._reopen_options)
+
+    def _reopen_options(self):
+        window = self.options_window
+        if window is None or not window.winfo_exists():
+            return
+        x, y = window.winfo_x(), window.winfo_y()
+        window.close()
+        self.open_options()
+        self.options_window.geometry("+{}+{}".format(x, y))
 
     def window_width(self):
         """Width of the window: the user's one, or the whole custom grid."""
@@ -730,6 +794,7 @@ class WidgetWindow(tk.Toplevel):
                 self.options_window.destroy()
             except tk.TclError:
                 pass
+        self.tray.hide()
         self.values["x"] = self.winfo_x()
         self.values["y"] = self.winfo_y()
         config.save(self.values)

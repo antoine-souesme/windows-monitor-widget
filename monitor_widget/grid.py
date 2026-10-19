@@ -8,6 +8,7 @@ row.
 """
 
 from . import probes
+from .i18n import tr
 
 MAX_SIZE = 6             # columns and rows both go from 1 to that
 EMPTY = ""
@@ -40,8 +41,8 @@ def is_valid(cell):
 
 def choices():
     """What a cell can show: empty first, then every value of every metric
-    in registry order, each with its French name."""
-    listed = [(EMPTY, EMPTY_LABEL)]
+    in registry order, each with its name."""
+    listed = [(EMPTY, tr(EMPTY_LABEL))]
     for key, cls in probes.PROBES.items():
         for index, name in enumerate(cls.slots()):
             listed.append((cell_id(key, index), name))

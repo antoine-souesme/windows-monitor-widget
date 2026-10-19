@@ -10,7 +10,7 @@ widget must never refuse to start because of it.
 import json
 import os
 
-from . import grid, probes
+from . import grid, i18n, probes
 
 APP_NAME = "MonitorWidget"
 # Folder used before the rename: read once so settings survive an update.
@@ -36,6 +36,8 @@ DEFAULTS = {
     "grid_cells": [],       # row by row, see grid.py; empty = no grid yet
     "grid_column_width": 200,   # width of one column of the custom grid
     "smooth": False,        # gauges glide between samples, at a CPU cost
+    "language": i18n.DEFAULT,   # one of i18n.LANGUAGES
+    "tray_icon": True,      # icon in the notification area
 }
 # Every metric adds its own choices here (see probes.Option).
 DEFAULTS.update(probes.option_defaults())
@@ -125,6 +127,9 @@ def _sanitize(values):
         cells = [cell if grid.is_valid(cell) else grid.EMPTY for cell in cells]
     values["grid_cells"] = cells
     values["smooth"] = bool(values.get("smooth", False))
+    if values.get("language") not in i18n.codes():
+        values["language"] = DEFAULTS["language"]
+    values["tray_icon"] = bool(values.get("tray_icon", True))
     # A choice that no longer exists falls back to the default of its metric.
     for cls in probes.options():
         for option in cls.options:

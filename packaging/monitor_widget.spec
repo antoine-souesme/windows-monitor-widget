@@ -8,12 +8,14 @@ nothing has to be unpacked to a temporary folder at each boot.
 import os
 
 ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
+ICON = os.path.join(ROOT, "monitor_widget", "icon.ico")
 
 analysis = Analysis(
     [os.path.join(ROOT, "main.py")],
     pathex=[ROOT],
     binaries=[],
-    datas=[],
+    # Read at run time by the notification area icon (system.icon_path).
+    datas=[(ICON, "monitor_widget")],
     hiddenimports=[],
     excludes=["numpy", "pandas", "PIL", "unittest", "pydoc", "test"],
     noarchive=False,
@@ -28,7 +30,7 @@ executable = EXE(
     exclude_binaries=True,
     name="MonitorWidget",
     console=False,          # no console window
-    icon=None,              # drop an .ico here when the project gets one
+    icon=ICON,              # drawn by packaging/make_icons.py
     debug=False,
     strip=False,
     upx=False,

@@ -125,6 +125,17 @@ class ConfigTest(unittest.TestCase):
         self.write({"grid_columns": 2, "grid_rows": 1, "grid_cells": ["net:1"]})
         self.assertEqual(config.load()["grid_cells"], ["net:1", ""])
 
+    def test_language_and_tray_icon_defaults(self):
+        values = config.load()
+        self.assertEqual(values["language"], "en")
+        self.assertTrue(values["tray_icon"])
+
+    def test_unknown_language_falls_back_to_english(self):
+        self.write({"language": "de", "tray_icon": False})
+        values = config.load()
+        self.assertEqual(values["language"], "en")
+        self.assertFalse(values["tray_icon"])
+
     def test_column_width_is_bounded(self):
         self.write({"grid_column_width": 5})
         self.assertEqual(config.load()["grid_column_width"], config.MIN_WIDTH)
