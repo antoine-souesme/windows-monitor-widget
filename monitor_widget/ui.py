@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
-"""The widget window: drawing, dragging and context menu."""
+"""The widget window: drawing, dragging and context menu. The settings
+live in the options window (options.py)."""
 
 import tkinter as tk
 import tkinter.font as tkfont
 from collections import deque
 
 from . import config, grid, probes, system
-from .version import __version__
+from .options import OptionsWindow
 
 # Palette.
 BACKGROUND = "#1e1f24"
@@ -42,7 +43,6 @@ PREFIX_GAP = 5           # empty space between that mark and the number
 RESIZE_BORDER = 6        # strip along the sides that resizes instead of moving
 EMPTY_HEIGHT = 60        # height used when no metric is selected
 EMPTY_TEXT = "Veuillez sélectionner une métrique à afficher"
-SMOOTH_LABEL = "Animations fluides (consomme plus de CPU)"
 
 
 def window_height(count, compact):
@@ -182,6 +182,7 @@ class WidgetWindow(tk.Toplevel):
         self._dragged = False
         self._job = None
         self._frame = None
+        self.options_window = None
         self.gauges = {}         # (probe key, column) -> ratio on screen,
                                  # behind the latest value when animated
 
@@ -230,62 +231,10 @@ class WidgetWindow(tk.Toplevel):
         self.canvas.bind("<Motion>", self._update_cursor)
 
     def _build_menu(self):
-        self.startup_var = tk.BooleanVar(value=system.is_startup_enabled())
-        self.on_top_var = tk.BooleanVar(value=self.values["always_on_top"])
-        self.compact_var = tk.BooleanVar(value=self.values["mode"] == "compact")
-        self.smooth_var = tk.BooleanVar(value=self.values["smooth"])
-        selected = [probe.key for probe in self.probes]
-        self.probe_vars = {key: tk.BooleanVar(value=key in selected)
-                           for key in probes.PROBES}
-
         self.menu = tk.Menu(self, tearoff=0)
-        # Plain caption, so the installed version is visible without a window.
-        self.menu.add_command(label="Monitor Widget {}".format(__version__), state="disabled")
-        self.menu.add_separator()
-        metrics = tk.Menu(self.menu, tearoff=0)
-        for key, cls in probes.PROBES.items():
-            metrics.add_checkbutton(label=cls.label,
-                                    variable=self.probe_vars[key],
-                                    command=self._change_probes)
-        self.menu.add_cascade(label="Métriques affichées", menu=metrics)
-        self._build_option_menu()
-        self.menu.add_separator()
-        self.menu.add_checkbutton(label="Mode compact",
-                                  variable=self.compact_var,
-                                  command=self._toggle_compact)
-        self.menu.add_checkbutton(label=SMOOTH_LABEL,
-                                  variable=self.smooth_var,
-                                  command=self._toggle_smooth)
-        # In a Store package Windows owns the auto start.
-        if not system.is_packaged():
-            self.menu.add_checkbutton(label="Lancer au démarrage",
-                                      variable=self.startup_var,
-                                      command=self._toggle_startup)
-        self.menu.add_checkbutton(label="Toujours au premier plan",
-                                  variable=self.on_top_var,
-                                  command=self._toggle_on_top)
+        self.menu.add_command(label="Options…", command=self.open_options)
         self.menu.add_separator()
         self.menu.add_command(label="Quitter", command=self.quit_widget)
-
-    def _build_option_menu(self):
-        """One sub menu per metric offering choices, built from probes.py."""
-        self.option_vars = {}
-        families = probes.options()
-        if not families:
-            return
-        root = tk.Menu(self.menu, tearoff=0)
-        for cls in families:
-            family = tk.Menu(root, tearoff=0)
-            for option in cls.options:
-                variable = tk.StringVar(value=self.values[option.key])
-                self.option_vars[option.key] = variable
-                for value, label in option.choices:
-                    family.add_radiobutton(
-                        label=label, value=value, variable=variable,
-                        command=lambda key=option.key: self.set_option(
-                            key, self.option_vars[key].get()))
-            root.add_cascade(label=cls.label, menu=family)
-        self.menu.add_cascade(label="Options des métriques", menu=root)
 
     def _restore_position(self):
         """Restore the saved position, or recenter when it is off screen."""
@@ -619,30 +568,20 @@ class WidgetWindow(tk.Toplevel):
     # ------------------------------------------------------------------
 
     def _open_menu(self, event):
-        # The check box always mirrors the real registry state.
-        if not system.is_packaged():
-            self.startup_var.set(system.is_startup_enabled())
         try:
             self.menu.tk_popup(event.x_root, event.y_root)
         finally:
             self.menu.grab_release()
 
-    def _toggle_startup(self):
-        actual = system.set_startup_enabled(self.startup_var.get())
-        self.startup_var.set(actual)
-
-    def _toggle_on_top(self):
-        self.set_on_top(self.on_top_var.get())
-
-    def _change_probes(self):
-        self.set_probes([key for key in probes.PROBES
-                         if self.probe_vars[key].get()])
-
-    def _toggle_compact(self):
-        self.set_mode("compact" if self.compact_var.get() else "normal")
-
-    def _toggle_smooth(self):
-        self.set_smooth(self.smooth_var.get())
+    def open_options(self):
+        """Show the options window, bringing back the one already open."""
+        window = self.options_window
+        if window is not None and window.winfo_exists():
+            window.deiconify()
+            window.lift()
+            window.focus_force()
+            return
+        self.options_window = OptionsWindow(self)
 
     # ------------------------------------------------------------------
     # Settings, applied at once and saved
@@ -784,6 +723,11 @@ class WidgetWindow(tk.Toplevel):
                 continue
             try:
                 self.after_cancel(job)
+            except tk.TclError:
+                pass
+        if self.options_window is not None:
+            try:
+                self.options_window.destroy()
             except tk.TclError:
                 pass
         self.values["x"] = self.winfo_x()
