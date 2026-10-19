@@ -7,7 +7,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from monitor_widget import probes
+from monitor_widget import config, probes
 
 MEGA = 1024 * 1024
 
@@ -133,6 +133,32 @@ class OptionTest(unittest.TestCase):
         defaults = probes.option_defaults()
         self.assertEqual(defaults["ram_display"], "percent")
         self.assertEqual(defaults["network_display"], "both")
+
+
+class SlotTest(unittest.TestCase):
+
+    def test_single_value_metric_has_one_slot(self):
+        self.assertEqual(probes.CpuProbe.slots(), ["CPU"])
+
+    def test_network_lists_both_directions(self):
+        self.assertEqual(probes.NetworkProbe.slots(),
+                         ["Réseau réception", "Réseau envoi"])
+
+    def test_custom_mode_forces_both_directions(self):
+        values = {"network_display": "upload"}
+        self.assertEqual(probes.configured_values(values, True)["network_display"], "both")
+        self.assertEqual(probes.configured_values(values, False)["network_display"], "upload")
+        self.assertEqual(values["network_display"], "upload")
+
+    def test_forced_options_are_hidden(self):
+        self.assertIn("network_display", probes.custom_hidden_options())
+        self.assertNotIn("ram_display", probes.custom_hidden_options())
+
+    def test_every_metric_has_as_many_slots_as_columns_in_custom_mode(self):
+        for cls in probes.PROBES.values():
+            probe = cls()
+            probe.configure(probes.configured_values(config.DEFAULTS, True))
+            self.assertEqual(probe.columns(), len(cls.slots()))
 
 
 if __name__ == "__main__":
