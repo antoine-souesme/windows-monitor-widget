@@ -126,6 +126,10 @@ class Probe:
         """How many values the block draws side by side."""
         return 1
 
+    def shown_slots(self):
+        """Index in `slots()` of each value currently drawn, column by column."""
+        return list(range(self.columns()))
+
     def read(self):
         """Return the current value, or one value per column. Never blocks."""
         raise NotImplementedError
@@ -309,6 +313,13 @@ class NetworkProbe(Probe):
 
     def columns(self):
         return 2 if self._display == "both" else 1
+
+    def shown_slots(self):
+        if self._display == "download":
+            return [0]
+        if self._display == "upload":
+            return [1]
+        return [0, 1]
 
     def read(self):
         counters = self._counts()
