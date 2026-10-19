@@ -4,13 +4,15 @@
 It holds no setting of its own: each change is handed to a public setter of
 the widget, which stores it, saves the configuration and redraws. Metrics,
 their values and their options are all read from probes.py and grid.py, so a
-new metric shows up here on its own.
+new metric shows up here on its own. Its texts are French, translated with
+tr(): the window is built again when the language changes.
 """
 
 import tkinter as tk
 from tkinter import ttk
 
-from . import grid, probes, system
+from . import grid, i18n, probes, system
+from .i18n import tr
 from .version import __version__
 
 TITLE = "Monitor Widget — Options"
@@ -63,33 +65,33 @@ class OptionsWindow(tk.Toplevel):
         return frame
 
     def _build_mode(self, parent):
-        frame = self._frame(parent, "Affichage")
+        frame = self._frame(parent, tr("Affichage"))
         self.mode_var = tk.StringVar(value=self.widget.values["mode"])
         for mode, label in MODES:
-            ttk.Radiobutton(frame, text=label, value=mode,
+            ttk.Radiobutton(frame, text=tr(label), value=mode,
                             variable=self.mode_var,
                             command=self._change_mode).pack(anchor="w")
 
     def _build_probes(self, parent):
-        self.probes_frame = self._frame(parent, "Métriques affichées")
+        self.probes_frame = self._frame(parent, tr("Métriques affichées"))
         shown = self.widget.values["probes"]
         self.probe_vars = {}
         for key, cls in probes.PROBES.items():
             variable = tk.BooleanVar(value=key in shown)
             self.probe_vars[key] = variable
-            ttk.Checkbutton(self.probes_frame, text=cls.label,
+            ttk.Checkbutton(self.probes_frame, text=tr(cls.label),
                             variable=variable,
                             command=self._change_probes).pack(anchor="w")
 
     def _build_grid(self, parent):
-        self.grid_frame = self._frame(parent, "Grille mode personnalisé")
+        self.grid_frame = self._frame(parent, tr("Grille mode personnalisé"))
         sizes = ttk.Frame(self.grid_frame)
         sizes.pack(anchor="w")
         self.columns_var = tk.StringVar()
         self.rows_var = tk.StringVar()
         for column, (label, variable) in enumerate((("Colonnes", self.columns_var),
                                                     ("Rangs", self.rows_var))):
-            ttk.Label(sizes, text=label).grid(row=0, column=2 * column,
+            ttk.Label(sizes, text=tr(label)).grid(row=0, column=2 * column,
                                               padx=(16 if column else 0, 6))
             ttk.Spinbox(sizes, from_=1, to=grid.MAX_SIZE, width=3,
                         state="readonly", textvariable=variable,
@@ -100,14 +102,14 @@ class OptionsWindow(tk.Toplevel):
         self.cell_boxes = []
 
     def _build_options(self, parent):
-        self.options_frame = self._frame(parent, "Options des métriques")
+        self.options_frame = self._frame(parent, tr("Options des métriques"))
         self.option_rows = []      # (option key, widgets of its row)
         row = 0
         for cls in probes.options():
             for option in cls.options:
-                label = ttk.Label(self.options_frame, text=cls.label)
+                label = ttk.Label(self.options_frame, text=tr(cls.label))
                 label.grid(row=row, column=0, sticky="w", padx=(0, 10), pady=2)
-                names = [name for _value, name in option.choices]
+                names = [tr(name) for _value, name in option.choices]
                 box = ttk.Combobox(self.options_frame, values=names,
                                    state="readonly", width=24)
                 values = option.values()
@@ -122,22 +124,40 @@ class OptionsWindow(tk.Toplevel):
                 row += 1
 
     def _build_general(self, parent):
-        frame = self._frame(parent, "Général")
+        frame = self._frame(parent, tr("Général"))
         values = self.widget.values
+        language = ttk.Frame(frame)
+        language.pack(anchor="w", pady=(0, 4))
+        ttk.Label(language, text=tr("Langue")).pack(side="left", padx=(0, 10))
+        codes = i18n.codes()
+        self.language_box = ttk.Combobox(
+            language, values=[name for _code, name in i18n.LANGUAGES],
+            state="readonly", width=12)
+        self.language_box.current(codes.index(i18n.language()))
+        self.language_box.bind("<<ComboboxSelected>>",
+                               lambda _event: self.widget.set_language(
+                                   codes[self.language_box.current()]))
+        self.language_box.pack(side="left")
         self.smooth_var = tk.BooleanVar(value=values["smooth"])
-        ttk.Checkbutton(frame, text=SMOOTH_LABEL, variable=self.smooth_var,
+        ttk.Checkbutton(frame, text=tr(SMOOTH_LABEL), variable=self.smooth_var,
                         command=lambda: self.widget.set_smooth(
                             self.smooth_var.get())).pack(anchor="w")
         # In a Store package Windows owns the auto start.
         if not system.is_packaged():
             self.startup_var = tk.BooleanVar(value=system.is_startup_enabled())
-            ttk.Checkbutton(frame, text="Lancer au démarrage",
+            ttk.Checkbutton(frame, text=tr("Lancer au démarrage"),
                             variable=self.startup_var,
                             command=self._change_startup).pack(anchor="w")
         self.on_top_var = tk.BooleanVar(value=values["always_on_top"])
-        ttk.Checkbutton(frame, text="Toujours au premier plan",
+        ttk.Checkbutton(frame, text=tr("Toujours au premier plan"),
                         variable=self.on_top_var,
                         command=self._change_on_top).pack(anchor="w")
+        if system.has_tray():
+            self.tray_var = tk.BooleanVar(value=values["tray_icon"])
+            ttk.Checkbutton(frame, text=tr("Icône dans la zone de notification"),
+                            variable=self.tray_var,
+                            command=lambda: self.widget.set_tray_icon(
+                                self.tray_var.get())).pack(anchor="w")
 
     # ------------------------------------------------------------------
     # Mode dependent parts

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Tests of the metrics: their options, their texts and their scale."""
+"""Tests of the metrics: their options, their texts and their scale. The
+texts are checked in French unless a test says otherwise."""
 
 import os
 import sys
@@ -7,9 +8,17 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from monitor_widget import config, probes
+from monitor_widget import config, i18n, probes
 
 MEGA = 1024 * 1024
+
+
+def setUpModule():
+    i18n.set_language("fr")
+
+
+def tearDownModule():
+    i18n.set_language(i18n.DEFAULT)
 
 
 class MemoryTextTest(unittest.TestCase):
@@ -120,6 +129,61 @@ class GpuTest(unittest.TestCase):
         probe = probes.GpuProbe()
         probe._query = None
         self.assertEqual(probe.read(), 0.0)
+
+
+class GpuTemperatureTest(unittest.TestCase):
+
+    def test_the_temperature_is_written_in_degrees(self):
+        self.assertEqual(probes.GpuTemperatureProbe().texts([64.4]), ["64°C"])
+
+    def test_no_reading_is_written_as_a_dash(self):
+        self.assertEqual(probes.GpuTemperatureProbe().texts([0.0]), ["–"])
+
+    def test_an_unavailable_card_reads_zero(self):
+        probe = probes.GpuTemperatureProbe()
+        probe._adapters = None
+        self.assertEqual(probe.read(), 0.0)
+
+    def test_the_scale_goes_from_idle_to_throttling(self):
+        probe = probes.GpuTemperatureProbe()
+        self.assertEqual(probe.ratio(20.0), 0.0)
+        self.assertEqual(probe.ratio(100.0), 1.0)
+        self.assertGreater(probe.ratio(80.0), probe.ratio(50.0))
+
+
+class EnglishTest(unittest.TestCase):
+
+    def setUp(self):
+        i18n.set_language("en")
+        self.addCleanup(i18n.set_language, "fr")
+
+    def test_units_and_decimal_point(self):
+        probe = probes.NetworkProbe()
+        probe.configure({"network_display": "both"})
+        self.assertEqual(probe.texts((12 * MEGA, 1.5 * MEGA)),
+                         ["12 MB/s", "1.5 MB/s"])
+        self.assertEqual(probe.template(), "99.9 MB/s")
+
+    def test_captions_and_slots(self):
+        probe = probes.NetworkProbe()
+        probe.configure({"network_display": "both"})
+        self.assertEqual(probe.captions(), ["↓ Download", "↑ Upload"])
+        self.assertEqual(probes.NetworkProbe.slots(),
+                         ["Network download", "Network upload"])
+        self.assertEqual(probes.GpuTemperatureProbe.slots(), ["GPU temp"])
+
+    def test_memory_value(self):
+        probe = probes.MemoryProbe()
+        probe.configure({"ram_display": "value"})
+        probe._used = 9 * 1024 * MEGA
+        probe._total = 16 * 1024 * MEGA
+        self.assertEqual(probe.texts([62.0]), ["9/16 GB"])
+
+    def test_every_option_choice_is_translated(self):
+        for cls in probes.options():
+            for option in cls.options:
+                for _value, name in option.choices:
+                    self.assertIn(name, i18n.ENGLISH)
 
 
 class OptionTest(unittest.TestCase):

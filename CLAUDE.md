@@ -7,7 +7,9 @@ and Personnalisé (a free grid of small lines).
 
 ## Conventions
 
-- Code and comments in English. User facing strings (menu labels) in French.
+- Code and comments in English. User facing strings are written in French
+  and always shown through `i18n.tr()`; every one of them needs its English
+  entry in `i18n.ENGLISH` (English is the default language).
 - No blocking calls in the UI thread: sampling runs on `after()` timers,
   never `sleep` or `psutil.cpu_percent(interval=...)`.
 - Windows specific calls live in `system.py` only, and every one of them must
@@ -23,10 +25,12 @@ and Personnalisé (a free grid of small lines).
 | --- | --- |
 | `main.py` | entry point: single instance, hidden root window |
 | `monitor_widget/config.py` | `%APPDATA%\MonitorWidget\config.json` read/write |
-| `monitor_widget/system.py` | Win32 styles, displays, `HKCU\...\Run`, mutex |
+| `monitor_widget/system.py` | Win32 styles, displays, GPU, `HKCU\...\Run`, mutex, notification icon |
 | `monitor_widget/probes.py` | the measurable metrics |
+| `monitor_widget/i18n.py` | language of the texts: French keys, English table |
 | `monitor_widget/grid.py` | custom grid arithmetic: cells, resizing, widths |
-| `monitor_widget/ui.py` | window, drawing, dragging, two-entry context menu |
+| `monitor_widget/ui.py` | window, drawing, dragging, two-entry context menu, notification icon menu |
+| `monitor_widget/icon.ico` | drawn by `packaging/make_icons.py`, bundled by the spec |
 | `monitor_widget/options.py` | options window: every setting, applied at once |
 | `monitor_widget/version.py` | single source of truth for the version |
 | `tests/` | configuration and layout tests (no display needed) |
@@ -71,7 +75,8 @@ version carries a fourth number that stays at zero.
 
 Subclass `Probe` in `probes.py` with a `key`, a `label` and `read()`, decorate
 it with `@register`. It appears in the options window and in the lists of the
-custom grid automatically. Do not add metric specific code to `ui.py` or
+custom grid automatically. Its `label`, slot names and option choices are
+French: add their English names to `i18n.ENGLISH`. Do not add metric specific code to `ui.py` or
 `options.py`.
 
 A metric can declare `options`: they show up under "Options des métriques" in

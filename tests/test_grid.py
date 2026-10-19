@@ -8,7 +8,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from monitor_widget import config, grid
+from monitor_widget import config, grid, i18n
 
 
 class GridTest(unittest.TestCase):
@@ -22,6 +22,8 @@ class GridTest(unittest.TestCase):
         self.assertTrue(grid.is_valid(""))
 
     def test_choices_start_with_empty_and_split_the_network(self):
+        i18n.set_language("fr")
+        self.addCleanup(i18n.set_language, i18n.DEFAULT)
         choices = grid.choices()
         self.assertEqual(choices[0], ("", "(vide)"))
         self.assertIn(("net:0", "Réseau réception"), choices)
