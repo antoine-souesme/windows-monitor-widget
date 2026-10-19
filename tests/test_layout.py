@@ -23,6 +23,9 @@ class WindowHeightTest(unittest.TestCase):
         self.assertEqual(ui.window_height(1, True), 56)
         self.assertEqual(ui.window_height(2, True), 98)
 
+    def test_grid_rows_use_the_compact_height(self):
+        self.assertEqual(ui.grid_height(3), ui.window_height(3, True))
+
     def test_no_metric_shows_the_empty_frame(self):
         self.assertEqual(ui.window_height(0, False), ui.EMPTY_HEIGHT)
         self.assertEqual(ui.window_height(0, True), ui.EMPTY_HEIGHT)

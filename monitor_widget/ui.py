@@ -5,7 +5,7 @@ import tkinter as tk
 import tkinter.font as tkfont
 from collections import deque
 
-from . import config, probes, system
+from . import config, grid, probes, system
 from .version import __version__
 
 # Palette.
@@ -53,6 +53,11 @@ def window_height(count, compact):
     block = COMPACT_HEIGHT if compact else BLOCK_HEIGHT
     gap = COMPACT_GAP if compact else BLOCK_GAP
     return 2 * PADDING + count * block + (count - 1) * gap
+
+
+def grid_height(rows):
+    """Height of a custom grid of `rows` rows of compact lines."""
+    return window_height(rows, True)
 
 
 _FONTS = {}
@@ -171,7 +176,7 @@ class WidgetWindow(tk.Toplevel):
         self.values = values
         self.probes = []
         self.histories = {}
-        self._apply_selection(values["probes"])
+        self._apply_selection(self._displayed_keys())
         self._drag_origin = None
         self._edge = None
         self._dragged = False
@@ -181,6 +186,10 @@ class WidgetWindow(tk.Toplevel):
                                  # behind the latest value when animated
 
         self._setup_window()
+        if self._custom():
+            # The grid may have been saved on a wider screen.
+            self.values["grid_column_width"] = self._fit_column_width(
+                self.values["grid_column_width"])
         self._build_canvas()
         self._build_menu()
         self._restore_position()
@@ -209,7 +218,7 @@ class WidgetWindow(tk.Toplevel):
     def _build_canvas(self):
         self.canvas = tk.Canvas(self, highlightthickness=0, bd=0,
                                 bg=self._canvas_background,
-                                width=self.values["width"],
+                                width=self.window_width(),
                                 height=self._height())
         self.canvas.pack(fill="both", expand=True)
         # Drag anywhere on the surface.
@@ -273,25 +282,14 @@ class WidgetWindow(tk.Toplevel):
                 for value, label in option.choices:
                     family.add_radiobutton(
                         label=label, value=value, variable=variable,
-                        command=lambda key=option.key: self._change_option(key))
+                        command=lambda key=option.key: self.set_option(
+                            key, self.option_vars[key].get()))
             root.add_cascade(label=cls.label, menu=family)
         self.menu.add_cascade(label="Options des métriques", menu=root)
 
-    def _change_option(self, key):
-        """Store a choice and hand it over to the metrics right away."""
-        self.values[key] = self.option_vars[key].get()
-        config.save(self.values)
-        for probe in self.probes:
-            probe.configure(self.values)
-            # A choice can add or remove a column: start that graph over.
-            if len(self.histories[probe.key][-1]) != probe.columns():
-                self.histories[probe.key] = _blank_history(probe.columns())
-        # In compact mode each value has lines of its own: the height follows.
-        self._resize()
-
     def _restore_position(self):
         """Restore the saved position, or recenter when it is off screen."""
-        width, height = self.values["width"], self._height()
+        width, height = self.window_width(), self._height()
         x, y = self.values["x"], self.values["y"]
         on_screen = (x is not None and y is not None
                      and system.is_point_on_screen(x + width // 2, y + height // 2, self)
@@ -358,7 +356,7 @@ class WidgetWindow(tk.Toplevel):
             return 0.0
 
     def _draw(self):
-        width, height = self.values["width"], self._height()
+        width, height = self.window_width(), self._height()
         self.canvas.delete("all")
         self._rounded_rectangle(1, 1, width - 1, height - 1, 12,
                                 fill=BACKGROUND, outline=BORDER)
@@ -366,8 +364,10 @@ class WidgetWindow(tk.Toplevel):
             self.canvas.create_text(width // 2, height // 2, text=EMPTY_TEXT,
                                     fill=CAPTION, font=("Segoe UI", 9),
                                     width=width - 2 * MARGIN, justify="center")
+        elif self._custom():
+            self._draw_grid()
         else:
-            compact = self.values["mode"] == "compact"
+            compact = self.values["mode"] in ("compact", "custom")
             block = COMPACT_HEIGHT if compact else BLOCK_HEIGHT
             gap = COMPACT_GAP if compact else BLOCK_GAP
             top = PADDING
@@ -380,6 +380,24 @@ class WidgetWindow(tk.Toplevel):
                     self._draw_block(probe, top, block)
                     top += block + gap
 
+    def _draw_grid(self):
+        """Every filled cell of the custom grid as a compact line. Cells
+        showing the same value share its probe, history and gauge."""
+        shown = {probe.key: probe for probe in self.probes}
+        columns = self.values["grid_columns"]
+        width = self.values["grid_column_width"]
+        for index, cell in enumerate(self.values["grid_cells"]):
+            parsed = grid.parse(cell)
+            if parsed is None or parsed[0] not in shown:
+                continue
+            probe, slot = shown[parsed[0]], parsed[1]
+            if slot >= len(self._last(probe)):
+                continue
+            row, column = divmod(index, columns)
+            x0 = column * width
+            top = PADDING + row * (COMPACT_HEIGHT + COMPACT_GAP)
+            self._draw_compact_line(probe, slot, top, x0, x0 + width)
+
     def _last(self, probe):
         """Most recent sample of a metric, zeros before the first one."""
         history = self.histories[probe.key]
@@ -388,7 +406,7 @@ class WidgetWindow(tk.Toplevel):
     def _draw_block(self, probe, top, block):
         """Caption, large number, then the graph underneath. A metric showing
         several values gets one number and one graph per column."""
-        width = self.values["width"]
+        width = self.window_width()
         values = self._last(probe)
         texts = probe.texts(values)
         self.canvas.create_text(MARGIN, top + 6, anchor="w", text=probe.label,
@@ -539,14 +557,15 @@ class WidgetWindow(tk.Toplevel):
     def _update_cursor(self, event):
         if self._drag_origin is not None:
             return
-        edge = resize_edge(event.x, self.values["width"])
+        edge = resize_edge(event.x, self.window_width())
         self.canvas.configure(cursor="sb_h_double_arrow" if edge else "")
 
     def _start_drag(self, event):
-        self._edge = resize_edge(event.x, self.values["width"])
+        self._edge = resize_edge(event.x, self.window_width())
         if self._edge:
             self._drag_origin = (event.x_root, self.winfo_x(),
-                                 self.values["width"])
+                                 self.window_width(),
+                                 self.values["grid_column_width"])
         else:
             self._drag_origin = (event.x_root - self.winfo_x(),
                                  event.y_root - self.winfo_y())
@@ -556,10 +575,25 @@ class WidgetWindow(tk.Toplevel):
         if self._drag_origin is None:
             return
         if self._edge:
-            start, x, width = self._drag_origin
-            x, width = resized(self._edge, x, width, event.x_root - start)
-            if width != self.values["width"]:
+            start, x, width, column_width = self._drag_origin
+            moved = event.x_root - start
+            if self._custom():
+                # Every column follows the edge by its share of the move.
+                columns = self.values["grid_columns"]
+                _x, column_width = resized(self._edge, x, column_width,
+                                           moved // columns)
+                column_width = self._fit_column_width(column_width)
+                new_width = column_width * columns
+                if self._edge == "left":
+                    x += width - new_width
+                width = new_width
+                changed = column_width != self.values["grid_column_width"]
+                self.values["grid_column_width"] = column_width
+            else:
+                x, width = resized(self._edge, x, width, moved)
+                changed = width != self.values["width"]
                 self.values["width"] = width
+            if changed:
                 self.canvas.configure(width=width)
                 self.geometry("{}x{}+{}+{}".format(width, self._height(), x,
                                                    self.winfo_y()))
@@ -598,29 +632,104 @@ class WidgetWindow(tk.Toplevel):
         self.startup_var.set(actual)
 
     def _toggle_on_top(self):
-        self.values["always_on_top"] = self.on_top_var.get()
-        self.attributes("-topmost", self.values["always_on_top"])
-        config.save(self.values)
+        self.set_on_top(self.on_top_var.get())
 
     def _change_probes(self):
-        selected = [key for key in probes.PROBES if self.probe_vars[key].get()]
-        self._apply_selection(selected)
-        self.values["probes"] = [probe.key for probe in self.probes]
-        config.save(self.values)
-        self._resize()
+        self.set_probes([key for key in probes.PROBES
+                         if self.probe_vars[key].get()])
 
     def _toggle_compact(self):
-        self.values["mode"] = "compact" if self.compact_var.get() else "normal"
+        self.set_mode("compact" if self.compact_var.get() else "normal")
+
+    def _toggle_smooth(self):
+        self.set_smooth(self.smooth_var.get())
+
+    # ------------------------------------------------------------------
+    # Settings, applied at once and saved
+    # ------------------------------------------------------------------
+
+    def set_mode(self, mode):
+        if mode == "custom" and not self.values["grid_cells"]:
+            # First grid: one column holding what was on screen until now.
+            columns, rows, cells = grid.initial(grid.displayed_cells(self.values))
+            self.values["grid_columns"] = columns
+            self.values["grid_rows"] = rows
+            self.values["grid_cells"] = cells
+        self.values["mode"] = mode
+        if mode == "custom":
+            self.values["grid_column_width"] = self._fit_column_width(
+                self.values["grid_column_width"])
+        self._reconfigure()
         config.save(self.values)
         self._resize()
 
-    def _toggle_smooth(self):
-        self.values["smooth"] = self.smooth_var.get()
+    def set_probes(self, keys):
+        self.values["probes"] = [key for key in keys if key in probes.PROBES]
+        self._reconfigure()
         config.save(self.values)
-        if not self.values["smooth"] and self._frame is not None:
+        self._resize()
+
+    def set_option(self, key, value):
+        self.values[key] = value
+        self._reconfigure()
+        config.save(self.values)
+        self._resize()
+
+    def set_grid(self, columns, rows, cells):
+        self.values["grid_columns"] = columns
+        self.values["grid_rows"] = rows
+        self.values["grid_cells"] = list(cells)
+        self.values["grid_column_width"] = self._fit_column_width(
+            self.values["grid_column_width"])
+        self._reconfigure()
+        config.save(self.values)
+        self._resize()
+
+    def set_smooth(self, enabled):
+        self.values["smooth"] = enabled
+        config.save(self.values)
+        if not enabled and self._frame is not None:
             self.after_cancel(self._frame)
             self._frame = None
         self._draw()
+
+    def set_on_top(self, enabled):
+        self.values["always_on_top"] = enabled
+        self.attributes("-topmost", enabled)
+        config.save(self.values)
+
+    def window_width(self):
+        """Width of the window: the user's one, or the whole custom grid."""
+        if self._custom():
+            return self.values["grid_columns"] * self.values["grid_column_width"]
+        return self.values["width"]
+
+    def _custom(self):
+        return self.values["mode"] == "custom"
+
+    def _fit_column_width(self, width):
+        return grid.fit_column_width(width, self.values["grid_columns"],
+                                     self.winfo_screenwidth(),
+                                     config.MIN_WIDTH, config.MAX_WIDTH)
+
+    def _displayed_keys(self):
+        """Metrics to read: those of the grid cells in custom mode."""
+        if self._custom():
+            return grid.needed_keys(self.values["grid_cells"])
+        return self.values["probes"]
+
+    def _configured(self):
+        return probes.configured_values(self.values, self._custom())
+
+    def _reconfigure(self):
+        """Pick the metrics the mode displays and hand them the choices it
+        implies. A choice can add or remove a column: that graph starts over."""
+        self._apply_selection(self._displayed_keys())
+        configured = self._configured()
+        for probe in self.probes:
+            probe.configure(configured)
+            if len(self.histories[probe.key][-1]) != probe.columns():
+                self.histories[probe.key] = _blank_history(probe.columns())
 
     def _apply_selection(self, keys):
         """Rebuild the list of probes, keeping the history of those already
@@ -634,7 +743,7 @@ class WidgetWindow(tk.Toplevel):
             probe = next((p for p in self.probes if p.key == key), None)
             if probe is None:
                 probe = cls()
-                probe.configure(self.values)
+                probe.configure(self._configured())
                 probe.start()
             kept.append(probe)
             histories[key] = self.histories.get(
@@ -643,6 +752,11 @@ class WidgetWindow(tk.Toplevel):
         self.histories = histories
 
     def _height(self):
+        if self._custom():
+            # The grid keeps its size, unless nothing at all is chosen.
+            if self.probes:
+                return grid_height(self.values["grid_rows"])
+            return EMPTY_HEIGHT
         if self.values["mode"] == "compact":
             # One pair of lines for each value a metric shows.
             return window_height(sum(len(self.histories[probe.key][-1])
@@ -651,12 +765,12 @@ class WidgetWindow(tk.Toplevel):
 
     def _resize(self):
         """Give the window the height its content needs, then redraw."""
-        height = self._height()
-        self.canvas.configure(height=height)
+        width, height = self.window_width(), self._height()
+        self.canvas.configure(width=width, height=height)
         if self.winfo_ismapped():
             # Keep the top left corner where the user left it.
             self.values["x"], self.values["y"] = self.winfo_x(), self.winfo_y()
-        self.geometry("{}x{}+{}+{}".format(self.values["width"], height,
+        self.geometry("{}x{}+{}+{}".format(width, height,
                                            self.values["x"], self.values["y"]))
         self._draw()
 
