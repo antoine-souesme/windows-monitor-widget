@@ -9,6 +9,11 @@ A metric can also offer choices (`options`): they show up under "Options des
 métriques", are stored in the configuration file and handed back to the probe
 through `configure()`. A metric can finally draw several values side by side
 inside its block by returning a tuple from `read()`.
+
+`slots()` names every value a metric can measure, whatever its options: the
+custom grid offers each of them separately. A metric whose options hide some
+of its values forces them back in custom mode through `custom_values`, so its
+columns always match its slots there.
 """
 
 import time
@@ -57,6 +62,24 @@ def options():
     return [cls for cls in PROBES.values() if cls.options]
 
 
+def configured_values(values, custom):
+    """Configuration handed to the metrics: in custom mode every metric's
+    `custom_values` override the stored choices. `values` is left as is."""
+    configured = dict(values)
+    if custom:
+        for cls in PROBES.values():
+            configured.update(cls.custom_values)
+    return configured
+
+
+def custom_hidden_options():
+    """Option keys that mean nothing in custom mode, as it forces them."""
+    hidden = set()
+    for cls in PROBES.values():
+        hidden.update(cls.custom_values)
+    return hidden
+
+
 def _scale(value):
     """Turn a size in bytes into a readable number and its unit."""
     units = ["o", "Ko", "Mo", "Go", "To"]
@@ -84,6 +107,14 @@ class Probe:
     minimum = 0.0
     maximum = 100.0
     options = ()
+    # Option values forced in custom mode, where each cell picks its value.
+    custom_values = {}
+
+    @classmethod
+    def slots(cls):
+        """French name of every value the metric can measure, whatever its
+        options, in column order."""
+        return [cls.label]
 
     def start(self):
         """Called once before the first read (optional priming)."""
@@ -94,6 +125,10 @@ class Probe:
     def columns(self):
         """How many values the block draws side by side."""
         return 1
+
+    def shown_slots(self):
+        """Index in `slots()` of each value currently drawn, column by column."""
+        return list(range(self.columns()))
 
     def read(self):
         """Return the current value, or one value per column. Never blocks."""
@@ -240,6 +275,7 @@ class NetworkProbe(Probe):
                       [("download", "Réception"),
                        ("both", "Réception et envoi"),
                        ("upload", "Envoi")]),)
+    custom_values = {"network_display": "both"}
     # Enough of a rate to be worth drawing: below that the graph stays flat
     # instead of turning noise into a mountain.
     FLOOR = 64 * 1024.0
@@ -254,6 +290,10 @@ class NetworkProbe(Probe):
         self._time = None
         self._peaks = [deque([0.0] * PEAK_POINTS, maxlen=PEAK_POINTS),
                        deque([0.0] * PEAK_POINTS, maxlen=PEAK_POINTS)]
+
+    @classmethod
+    def slots(cls):
+        return ["Réseau réception", "Réseau envoi"]
 
     def configure(self, values):
         self._display = values.get("network_display", "both")
@@ -273,6 +313,13 @@ class NetworkProbe(Probe):
 
     def columns(self):
         return 2 if self._display == "both" else 1
+
+    def shown_slots(self):
+        if self._display == "download":
+            return [0]
+        if self._display == "upload":
+            return [1]
+        return [0, 1]
 
     def read(self):
         counters = self._counts()
