@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """Draws the PNG logos the Store package needs, without any dependency.
 
-Run it once (or after changing the drawing) to refresh packaging/msix/Assets:
+It also draws monitor_widget/icon.ico, the icon of the executable and of the
+notification area. Run it once (or after changing the drawing) to refresh
+them:
 
     python packaging/make_icons.py
 
@@ -15,6 +17,7 @@ import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ASSETS = os.path.join(HERE, "msix", "Assets")
+ICON = os.path.join(HERE, "..", "monitor_widget", "icon.ico")
 
 SUPERSAMPLE = 4                      # drawn larger, then averaged down
 BACKGROUND = (27, 29, 33)            # near black, matches the widget
@@ -28,6 +31,8 @@ LOGOS = {
     "Square150x150Logo.png": 150,
     "StoreLogo.png": 50,
 }
+# Sides held by the .ico, Windows picks the one matching the display scale.
+ICON_SIDES = [16, 20, 24, 32, 40, 48, 64]
 
 
 def _mix(low, high, ratio):
@@ -112,12 +117,41 @@ def _write_png(path, rows):
         handle.write(chunk(b"IEND", b""))
 
 
+def _bitmap(rows):
+    """One .ico entry: a 32 bit BGRA bitmap, bottom row first, followed by
+    the (unused but required) transparency mask."""
+    side = len(rows)
+    header = struct.pack("<IiiHHIIiiII", 40, side, side * 2, 1, 32, 0, 0,
+                         0, 0, 0, 0)
+    pixels = b"".join(bytes((b, g, r, a)) for row in reversed(rows)
+                      for (r, g, b, a) in row)
+    mask = b"\x00" * (((side + 31) // 32) * 4 * side)
+    return header + pixels + mask
+
+
+def _write_ico(path, sides):
+    images = [_bitmap(_draw(side)) for side in sides]
+    offset = 6 + 16 * len(images)
+    directory = b""
+    for side, image in zip(sides, images):
+        directory += struct.pack("<BBBBHHII", side % 256, side % 256, 0, 0,
+                                 1, 32, len(image), offset)
+        offset += len(image)
+    with open(path, "wb") as handle:
+        handle.write(struct.pack("<HHH", 0, 1, len(images)))
+        handle.write(directory)
+        for image in images:
+            handle.write(image)
+
+
 def main():
     os.makedirs(ASSETS, exist_ok=True)
     for name, side in LOGOS.items():
         path = os.path.join(ASSETS, name)
         _write_png(path, _draw(side))
         print("written", path)
+    _write_ico(ICON, ICON_SIDES)
+    print("written", os.path.normpath(ICON))
 
 
 if __name__ == "__main__":

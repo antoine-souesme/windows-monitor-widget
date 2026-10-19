@@ -35,14 +35,14 @@ class ConfigTest(unittest.TestCase):
     def test_defaults_when_no_file(self):
         values = config.load()
         self.assertEqual(values["probes"], ["cpu"])
-        self.assertFalse(values["compact"])
+        self.assertEqual(values["mode"], "normal")
         self.assertFalse(values["smooth"])
 
     def test_reads_the_list_of_metrics(self):
-        self.write({"probes": ["ram", "cpu"], "compact": True})
+        self.write({"probes": ["ram", "cpu"], "mode": "compact"})
         values = config.load()
         self.assertEqual(values["probes"], ["ram", "cpu"])
-        self.assertTrue(values["compact"])
+        self.assertEqual(values["mode"], "compact")
 
     def test_empty_list_is_kept(self):
         self.write({"probes": []})
@@ -90,11 +90,55 @@ class ConfigTest(unittest.TestCase):
     def test_save_then_load(self):
         values = config.load()
         values["probes"] = ["ram"]
-        values["compact"] = True
+        values["mode"] = "compact"
         self.assertTrue(config.save(values))
         reloaded = config.load()
         self.assertEqual(reloaded["probes"], ["ram"])
-        self.assertTrue(reloaded["compact"])
+        self.assertEqual(reloaded["mode"], "compact")
+
+    def test_mode_defaults_to_normal(self):
+        self.assertEqual(config.load()["mode"], "normal")
+
+    def test_old_compact_flag_is_migrated(self):
+        self.write({"compact": True})
+        self.assertEqual(config.load()["mode"], "compact")
+
+    def test_mode_wins_over_the_old_flag(self):
+        self.write({"compact": True, "mode": "custom"})
+        self.assertEqual(config.load()["mode"], "custom")
+
+    def test_unknown_mode_falls_back_to_normal(self):
+        self.write({"mode": "giant"})
+        self.assertEqual(config.load()["mode"], "normal")
+
+    def test_grid_size_is_bounded(self):
+        self.write({"grid_columns": 9, "grid_rows": 0})
+        values = config.load()
+        self.assertEqual((values["grid_columns"], values["grid_rows"]), (6, 1))
+
+    def test_broken_cells_become_empty_and_fit_the_grid(self):
+        self.write({"grid_columns": 2, "grid_rows": 2,
+                    "grid_cells": ["cpu:0", "net:9", 3, "nope:0", "ram:0"]})
+        self.assertEqual(config.load()["grid_cells"], ["cpu:0", "", "", ""])
+
+    def test_short_cell_list_is_padded(self):
+        self.write({"grid_columns": 2, "grid_rows": 1, "grid_cells": ["net:1"]})
+        self.assertEqual(config.load()["grid_cells"], ["net:1", ""])
+
+    def test_language_and_tray_icon_defaults(self):
+        values = config.load()
+        self.assertEqual(values["language"], "en")
+        self.assertTrue(values["tray_icon"])
+
+    def test_unknown_language_falls_back_to_english(self):
+        self.write({"language": "de", "tray_icon": False})
+        values = config.load()
+        self.assertEqual(values["language"], "en")
+        self.assertFalse(values["tray_icon"])
+
+    def test_column_width_is_bounded(self):
+        self.write({"grid_column_width": 5})
+        self.assertEqual(config.load()["grid_column_width"], config.MIN_WIDTH)
 
 
 if __name__ == "__main__":

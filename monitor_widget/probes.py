@@ -9,12 +9,20 @@ A metric can also offer choices (`options`): they show up under "Options des
 métriques", are stored in the configuration file and handed back to the probe
 through `configure()`. A metric can finally draw several values side by side
 inside its block by returning a tuple from `read()`.
+
+`slots()` names every value a metric can measure, whatever its options: the
+custom grid offers each of them separately. A metric whose options hide some
+of its values forces them back in custom mode through `custom_values`, so its
+columns always match its slots there.
 """
 
 import time
 from collections import deque
 
 import psutil
+
+from . import system
+from .i18n import decimal_mark, tr
 
 # Available probes, in declaration order.
 PROBES = {}
@@ -35,7 +43,7 @@ class Option:
     def __init__(self, key, default, choices):
         self.key = key            # configuration key holding the answer
         self.default = default    # value used on first launch
-        self.choices = choices    # list of (value, French label)
+        self.choices = choices    # list of (value, French label, see tr())
 
     def values(self):
         return [value for value, _label in self.choices]
@@ -55,22 +63,48 @@ def options():
     return [cls for cls in PROBES.values() if cls.options]
 
 
-def _scale(value):
-    """Turn a size in bytes into a readable number and its unit."""
-    units = ["o", "Ko", "Mo", "Go", "To"]
+def configured_values(values, custom):
+    """Configuration handed to the metrics: in custom mode every metric's
+    `custom_values` override the stored choices. `values` is left as is."""
+    configured = dict(values)
+    if custom:
+        for cls in PROBES.values():
+            configured.update(cls.custom_values)
+    return configured
+
+
+def custom_hidden_options():
+    """Option keys that mean nothing in custom mode, as it forces them."""
+    hidden = set()
+    for cls in PROBES.values():
+        hidden.update(cls.custom_values)
+    return hidden
+
+
+UNITS = ["o", "Ko", "Mo", "Go", "To"]
+
+
+def _magnitude(value):
+    """Index in UNITS of the unit a size in bytes reads best in."""
     index = 0
     value = float(value)
-    while value >= 1024.0 and index < len(units) - 1:
+    while value >= 1024.0 and index < len(UNITS) - 1:
         value /= 1024.0
         index += 1
-    return value, units[index]
+    return index
+
+
+def _scale(value):
+    """Turn a size in bytes into a readable number and its unit."""
+    index = _magnitude(value)
+    return float(value) / 1024.0 ** index, tr(UNITS[index])
 
 
 def _number(value):
-    """French looking number: a comma, and decimals only when they matter."""
+    """Decimals only when they matter, with the mark of the language."""
     if value >= 100 or abs(value - round(value)) < 0.05:
         return "{:.0f}".format(value)
-    return "{:.1f}".format(value).replace(".", ",")
+    return "{:.1f}".format(value).replace(".", decimal_mark())
 
 
 class Probe:
@@ -82,6 +116,14 @@ class Probe:
     minimum = 0.0
     maximum = 100.0
     options = ()
+    # Option values forced in custom mode, where each cell picks its value.
+    custom_values = {}
+
+    @classmethod
+    def slots(cls):
+        """Name of every value the metric can measure, whatever its options,
+        in column order."""
+        return [tr(cls.label)]
 
     def start(self):
         """Called once before the first read (optional priming)."""
@@ -92,6 +134,10 @@ class Probe:
     def columns(self):
         """How many values the block draws side by side."""
         return 1
+
+    def shown_slots(self):
+        """Index in `slots()` of each value currently drawn, column by column."""
+        return list(range(self.columns()))
 
     def read(self):
         """Return the current value, or one value per column. Never blocks."""
@@ -108,7 +154,7 @@ class Probe:
     def captions(self):
         """Name written before each value in compact mode, where every value
         of a metric gets lines of its own."""
-        return [self.label] * self.columns()
+        return [tr(self.label)] * self.columns()
 
     def prefixes(self):
         """Mark drawn before each number, at a size of its own, or None."""
@@ -144,6 +190,67 @@ class CpuProbe(Probe):
 
     def read(self):
         return psutil.cpu_percent(interval=None)
+
+
+def busiest_engine(samples):
+    """Load of the busiest GPU engine, as the Task Manager shows it: the
+    processes sharing one engine add up, then the busiest engine wins."""
+    engines = {}
+    for name, value in samples:
+        # "pid_1234_luid_..._eng_0_engtype_3D": the engine is what follows
+        # the process id.
+        engine = name[name.find("luid_"):] if "luid_" in name else name
+        engines[engine] = engines.get(engine, 0.0) + max(0.0, value)
+    return min(max(engines.values(), default=0.0), 100.0)
+
+
+@register
+class GpuProbe(Probe):
+    """Load of the graphics card, whatever its brand. Reads 0 when Windows
+    gives no GPU counters (or outside Windows)."""
+
+    key = "gpu"
+    label = "GPU"
+
+    def __init__(self):
+        self._query = None
+
+    def start(self):
+        self._query = system.open_gpu_query()
+
+    def read(self):
+        return busiest_engine(system.read_gpu_engines(self._query))
+
+
+@register
+class GpuTemperatureProbe(Probe):
+    """Temperature of the hottest graphics card, as the Task Manager shows
+    it. Reads 0, written as a dash, when the driver gives none (integrated
+    chips, old drivers, or outside Windows)."""
+
+    key = "gpu_temp"
+    label = "Temp. GPU"
+    unit = "°C"
+    # The color scale goes from an idle card to a throttling one.
+    minimum = 30.0
+    maximum = 95.0
+
+    def __init__(self):
+        self._adapters = None
+
+    def start(self):
+        self._adapters = system.open_gpu_adapters()
+
+    def read(self):
+        return system.read_gpu_temperature(self._adapters) or 0.0
+
+    def format(self, value):
+        if value <= 0:
+            return "–"
+        return "{:.0f}{}".format(value, self.unit)
+
+    def template(self):
+        return "100°C"
 
 
 @register
@@ -190,7 +297,8 @@ class MemoryProbe(Probe):
         if self._display == "percent" or not self._total:
             return "100%"
         total, unit = _scale(self._total)
-        widest = "{:.0f},9".format(total) if total < 100 else _number(total)
+        widest = ("{:.0f}{}9".format(total, decimal_mark()) if total < 100
+                  else _number(total))
         size = "{}/{} {}".format(widest, _number(total), unit)
         if self._display == "value":
             return size
@@ -208,6 +316,7 @@ class NetworkProbe(Probe):
                       [("download", "Réception"),
                        ("both", "Réception et envoi"),
                        ("upload", "Envoi")]),)
+    custom_values = {"network_display": "both"}
     # Enough of a rate to be worth drawing: below that the graph stays flat
     # instead of turning noise into a mountain.
     FLOOR = 64 * 1024.0
@@ -222,6 +331,10 @@ class NetworkProbe(Probe):
         self._time = None
         self._peaks = [deque([0.0] * PEAK_POINTS, maxlen=PEAK_POINTS),
                        deque([0.0] * PEAK_POINTS, maxlen=PEAK_POINTS)]
+
+    @classmethod
+    def slots(cls):
+        return [tr("Réseau réception"), tr("Réseau envoi")]
 
     def configure(self, values):
         self._display = values.get("network_display", "both")
@@ -241,6 +354,13 @@ class NetworkProbe(Probe):
 
     def columns(self):
         return 2 if self._display == "both" else 1
+
+    def shown_slots(self):
+        if self._display == "download":
+            return [0]
+        if self._display == "upload":
+            return [1]
+        return [0, 1]
 
     def read(self):
         counters = self._counts()
@@ -277,9 +397,9 @@ class NetworkProbe(Probe):
     def texts(self, values):
         # One unit for the whole block, so the two figures can be compared,
         # but written on each of them: a number alone means nothing.
-        _scaled, unit = _scale(max(list(values) + [self.FLOOR]))
-        divider = 1024.0 ** ["o", "Ko", "Mo", "Go", "To"].index(unit)
-        return ["{} {}/s".format(_number(value / divider), unit)
+        index = _magnitude(max(list(values) + [self.FLOOR]))
+        divider = 1024.0 ** index
+        return ["{} {}/s".format(_number(value / divider), tr(UNITS[index]))
                 for value in values]
 
     def prefixes(self):
@@ -287,12 +407,13 @@ class NetworkProbe(Probe):
 
     def captions(self):
         names = {"↓": "Réception", "↑": "Envoi"}
-        return ["{} {}".format(arrow, names[arrow]) for arrow in self._arrows()]
+        return ["{} {}".format(arrow, tr(names[arrow]))
+                for arrow in self._arrows()]
 
     def template(self):
         # Widest rate expected on a home line; a faster one simply gets a
         # shorter number ("123 Mo/s"), so the size still holds.
-        return "99,9 Mo/s"
+        return "{} {}/s".format(_number(99.9), tr("Mo"))
 
     def ratio(self, value, column=0):
         peak = max(list(self._peaks[column]) + [self.FLOOR])

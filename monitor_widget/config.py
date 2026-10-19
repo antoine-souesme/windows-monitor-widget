@@ -10,7 +10,7 @@ widget must never refuse to start because of it.
 import json
 import os
 
-from . import probes
+from . import grid, i18n, probes
 
 APP_NAME = "MonitorWidget"
 # Folder used before the rename: read once so settings survive an update.
@@ -20,6 +20,9 @@ LEGACY_APP_NAME = "CpuWidget"
 MIN_WIDTH = 140
 MAX_WIDTH = 600
 
+# Display modes: tall blocks, small lines, or a grid of small lines.
+MODES = ("normal", "compact", "custom")
+
 # Values used on first launch, or when the file cannot be used.
 DEFAULTS = {
     "x": None,              # left position in pixels (None = center)
@@ -27,8 +30,14 @@ DEFAULTS = {
     "width": 200,
     "always_on_top": True,
     "probes": ["cpu"],      # keys of the displayed metrics (see probes.py)
-    "compact": False,       # small lines: caption and graph, number and gauge
+    "mode": "normal",       # one of MODES
+    "grid_columns": 1,      # size of the custom grid
+    "grid_rows": 1,
+    "grid_cells": [],       # row by row, see grid.py; empty = no grid yet
+    "grid_column_width": 200,   # width of one column of the custom grid
     "smooth": False,        # gauges glide between samples, at a CPU cost
+    "language": i18n.DEFAULT,   # one of i18n.LANGUAGES
+    "tray_icon": True,      # icon in the notification area
 }
 # Every metric adds its own choices here (see probes.Option).
 DEFAULTS.update(probes.option_defaults())
@@ -76,6 +85,9 @@ def load():
             # Versions up to 1.0.2 stored a single metric under "probe".
             if "probes" not in stored and isinstance(stored.get("probe"), str):
                 values["probes"] = [stored["probe"]]
+            # Versions up to 1.0.13 stored compact mode as a flag.
+            if "mode" not in stored and stored.get("compact") is True:
+                values["mode"] = "compact"
     except (OSError, ValueError, TypeError):
         # Missing file, unreadable file or broken JSON: keep the defaults.
         pass
@@ -94,8 +106,30 @@ def _sanitize(values):
         except (TypeError, ValueError):
             values[key] = None
     values["always_on_top"] = bool(values.get("always_on_top", True))
-    values["compact"] = bool(values.get("compact", False))
+    if values.get("mode") not in MODES:
+        values["mode"] = DEFAULTS["mode"]
+    for key in ("grid_columns", "grid_rows"):
+        try:
+            values[key] = max(1, min(int(values[key]), grid.MAX_SIZE))
+        except (TypeError, ValueError):
+            values[key] = 1
+    try:
+        values["grid_column_width"] = max(MIN_WIDTH, min(int(values["grid_column_width"]),
+                                                         MAX_WIDTH))
+    except (TypeError, ValueError):
+        values["grid_column_width"] = DEFAULTS["grid_column_width"]
+    cells = values.get("grid_cells")
+    cells = list(cells) if isinstance(cells, list) else []
+    if cells:
+        # Exactly one entry per cell, and nothing that names no value.
+        size = values["grid_columns"] * values["grid_rows"]
+        cells = (cells + [grid.EMPTY] * size)[:size]
+        cells = [cell if grid.is_valid(cell) else grid.EMPTY for cell in cells]
+    values["grid_cells"] = cells
     values["smooth"] = bool(values.get("smooth", False))
+    if values.get("language") not in i18n.codes():
+        values["language"] = DEFAULTS["language"]
+    values["tray_icon"] = bool(values.get("tray_icon", True))
     # A choice that no longer exists falls back to the default of its metric.
     for cls in probes.options():
         for option in cls.options:

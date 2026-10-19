@@ -1,12 +1,15 @@
 # Monitor Widget
 
-Borderless Windows desktop widget (Python 3 + tkinter + psutil) showing one
-live system metric: large percentage, 60-second scrolling graph, green to red
-color scale.
+Borderless Windows desktop widget (Python 3 + tkinter + psutil) showing live
+system metrics: large percentage, 60-second scrolling graph, green to red
+color scale. Three display modes: Normal (tall blocks), Compact (small lines)
+and Personnalisé (a free grid of small lines).
 
 ## Conventions
 
-- Code and comments in English. User facing strings (menu labels) in French.
+- Code and comments in English. User facing strings are written in French
+  and always shown through `i18n.tr()`; every one of them needs its English
+  entry in `i18n.ENGLISH` (English is the default language).
 - No blocking calls in the UI thread: sampling runs on `after()` timers,
   never `sleep` or `psutil.cpu_percent(interval=...)`.
 - Windows specific calls live in `system.py` only, and every one of them must
@@ -22,9 +25,13 @@ color scale.
 | --- | --- |
 | `main.py` | entry point: single instance, hidden root window |
 | `monitor_widget/config.py` | `%APPDATA%\MonitorWidget\config.json` read/write |
-| `monitor_widget/system.py` | Win32 styles, displays, `HKCU\...\Run`, mutex |
+| `monitor_widget/system.py` | Win32 styles, displays, GPU, `HKCU\...\Run`, mutex, notification icon |
 | `monitor_widget/probes.py` | the measurable metrics |
-| `monitor_widget/ui.py` | window, drawing, dragging, context menu |
+| `monitor_widget/i18n.py` | language of the texts: French keys, English table |
+| `monitor_widget/grid.py` | custom grid arithmetic: cells, resizing, widths |
+| `monitor_widget/ui.py` | window, drawing, dragging, two-entry context menu, notification icon menu |
+| `monitor_widget/icon.ico` | drawn by `packaging/make_icons.py`, bundled by the spec |
+| `monitor_widget/options.py` | options window: every setting, applied at once |
 | `monitor_widget/version.py` | single source of truth for the version |
 | `tests/` | configuration and layout tests (no display needed) |
 | `packaging/` | PyInstaller spec and MSIX build script |
@@ -61,20 +68,29 @@ Windows machine at hand.
 
 Inside a package Windows owns the auto start (declared as a startup task in
 the manifest, turned off from the system settings), so `system.is_packaged()`
-hides that menu entry. `Identity` in the manifest must never change, and its
+hides that entry of the options window. `Identity` in the manifest must never change, and its
 version carries a fourth number that stays at zero.
 
 ## Adding a metric
 
 Subclass `Probe` in `probes.py` with a `key`, a `label` and `read()`, decorate
-it with `@register`. It appears in the context menu automatically. Do not add
-metric specific code to `ui.py`.
+it with `@register`. It appears in the options window and in the lists of the
+custom grid automatically. Its `label`, slot names and option choices are
+French: add their English names to `i18n.ENGLISH`. Do not add metric specific code to `ui.py` or
+`options.py`.
 
-A metric can declare `options`: they show up under "Options des métriques",
-their default lands in the configuration file on its own, and the answer comes
-back through `configure()`. A metric can also draw several values side by side
-by returning a tuple from `read()` and saying how many with `columns()`;
-`texts()` gives the text of each one and `tint()` its color.
+A metric can declare `options`: they show up under "Options des métriques" in
+the options window, their default lands in the configuration file on its own,
+and the answer comes back through `configure()`. A metric can also draw
+several values side by side by returning a tuple from `read()` and saying how
+many with `columns()`; `texts()` gives the text of each one and `tint()` its
+color.
+
+`slots()` names every value a metric can measure, whatever its options: each
+one is a separate choice of the custom grid, and `shown_slots()` says which
+are drawn under the current options. When an option hides some values,
+`custom_values` forces it in custom mode so the columns match the slots (the
+network forces "both"); such options are hidden there.
 
 ## Run and check
 

@@ -3,3 +3,6 @@ __pycache__/
 build/
 dist/
 .venv/
+.superpowers/
+
+docs/suivi/TODO.md
