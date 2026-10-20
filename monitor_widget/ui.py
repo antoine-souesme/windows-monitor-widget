@@ -36,6 +36,7 @@ COMPACT_GRAPH = 24       # height of the graph row, the gauge row takes the rest
 GAUGE_GAP = 4            # empty space between that graph and the gauge
 GAUGE_THICKNESS = 6      # height of the bar showing the current value
 FILL_SHARE = 0.35        # share of the value color in the area under a curve
+SHADE_SHARE = 0.25       # same, for the lighter shade of the tall blocks
 COLUMN_GAP = 10          # empty space between two values of the same metric
 BLOCK_SIZES = [22, 18, 15, 12, 10]    # font sizes tried for the large number
 COMPACT_SIZES = [10, 9, 8, 7]
@@ -502,13 +503,12 @@ class WidgetWindow(tk.Toplevel):
         for index, sample in enumerate(samples):
             points.append(x0 + index * step)
             points.append(y1 - probe.ratio(sample, column) * span)
-        # Shaded area first, then the curve itself.
-        if fill is None:
-            self.canvas.create_polygon(points + [x1, y1, x0, y1],
-                                       fill=color, outline="", stipple="gray25")
-        else:
-            self.canvas.create_polygon(points + [x1, y1, x0, y1],
-                                       fill=fill, outline="")
+        # Shaded area first, then the curve itself. A plain blended color, not
+        # a stipple: on Windows Tk allocates a bitmap for every stippled shape
+        # it draws, and fails with "Tk_GetPixmap" when memory runs short.
+        shade = fill or blend(color, BACKGROUND, SHADE_SHARE)
+        self.canvas.create_polygon(points + [x1, y1, x0, y1],
+                                   fill=shade, outline="")
         self.canvas.create_line(points, fill=color,
                                 width=1.5 if fill is None else 2, smooth=True)
 
