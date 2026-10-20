@@ -16,6 +16,8 @@ and Personnalisé (a free grid of small lines).
   stay harmless on other platforms so the code can be run on macOS/Linux.
 - Never crash on bad input: a corrupted config falls back to defaults, a
   failing registry read returns False.
+- Every error ends up in `log.txt` (see `crashlog.py`): never swallow one
+  silently in a place the log cannot see, and never let logging itself fail.
 - Config is written on meaningful events (end of a drag, option change, exit),
   not on every mouse move.
 
@@ -26,6 +28,7 @@ and Personnalisé (a free grid of small lines).
 | `main.py` | entry point: single instance, hidden root window |
 | `monitor_widget/config.py` | `%APPDATA%\MonitorWidget\config.json` read/write |
 | `monitor_widget/system.py` | Win32 styles, displays, GPU, `HKCU\...\Run`, mutex, notification icon |
+| `monitor_widget/crashlog.py` | `log.txt` next to the config: starts, exits, errors, crashes, freezes |
 | `monitor_widget/probes.py` | the measurable metrics |
 | `monitor_widget/i18n.py` | language of the texts: French keys, English table |
 | `monitor_widget/grid.py` | custom grid arithmetic: cells, resizing, widths |

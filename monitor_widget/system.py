@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Everything Windows specific: single instance, window styles, connected
-displays, GPU counters, auto start and notification area icon.
+displays, GPU counters, auto start, notification area icon and the real
+place of files inside a Store package.
 
 Every function stays callable outside Windows (doing nothing useful, but not
 failing), so the rest of the program can be read and tested elsewhere.
@@ -599,5 +600,68 @@ def is_packaged():
         length = ctypes.c_uint32(0)
         result = kernel32.GetCurrentPackageFullName(ctypes.byref(length), None)
         return result != _APPMODEL_ERROR_NO_PACKAGE
+    except (AttributeError, OSError):
+        return False
+
+
+def _package_family_name():
+    """Family name of the running package, None outside a package."""
+    if not IS_WINDOWS:
+        return None
+    try:
+        kernel32 = ctypes.windll.kernel32
+        length = ctypes.c_uint32(0)
+        kernel32.GetCurrentPackageFamilyName(ctypes.byref(length), None)
+        if not length.value:
+            return None
+        buffer = ctypes.create_unicode_buffer(length.value)
+        if kernel32.GetCurrentPackageFamilyName(ctypes.byref(length), buffer) != 0:
+            return None
+        return buffer.value
+    except (AttributeError, OSError):
+        return None
+
+
+def real_path(path):
+    """Where a file of %APPDATA% really is on disk.
+
+    Inside a package Windows quietly redirects what the widget writes to
+    %APPDATA% into the package's own folder. The widget does not notice, but
+    the Explorer, which runs outside the package, only sees the real place.
+    """
+    family = _package_family_name()
+    appdata = os.environ.get("APPDATA")
+    local = os.environ.get("LOCALAPPDATA")
+    if not family or not appdata or not local:
+        return path
+    try:
+        relative = os.path.relpath(path, appdata)
+    except ValueError:
+        return path
+    if relative.startswith(".."):
+        return path
+    redirected = os.path.join(local, "Packages", family, "LocalCache",
+                              "Roaming", relative)
+    return redirected if os.path.exists(redirected) else path
+
+
+def show_file(path):
+    """Open the folder of `path` in the file manager, the file selected when
+    possible. Return False when nothing could be opened."""
+    import subprocess
+    path = real_path(path)
+    folder = os.path.dirname(path)
+    try:
+        if IS_WINDOWS:
+            if os.path.exists(path):
+                subprocess.Popen(["explorer", "/select,", path])
+            else:
+                os.startfile(folder)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", path] if os.path.exists(path)
+                             else ["open", folder])
+        else:
+            subprocess.Popen(["xdg-open", folder])
+        return True
     except (AttributeError, OSError):
         return False
