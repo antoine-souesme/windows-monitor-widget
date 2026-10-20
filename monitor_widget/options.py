@@ -11,7 +11,7 @@ tr(): the window is built again when the language changes.
 import tkinter as tk
 from tkinter import ttk
 
-from . import grid, i18n, probes, system
+from . import crashlog, grid, i18n, probes, system
 from .i18n import tr
 from .version import __version__
 
@@ -158,6 +158,10 @@ class OptionsWindow(tk.Toplevel):
                             variable=self.tray_var,
                             command=lambda: self.widget.set_tray_icon(
                                 self.tray_var.get())).pack(anchor="w")
+        # The file to send when the widget misbehaves (see crashlog.py).
+        ttk.Button(frame, text=tr("Ouvrir le dossier des journaux"),
+                   command=lambda: system.show_file(crashlog.log_path())).pack(
+                       anchor="w", pady=(6, 0))
 
     # ------------------------------------------------------------------
     # Mode dependent parts

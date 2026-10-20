@@ -36,6 +36,7 @@ ENGLISH = {
     "Lancer au démarrage": "Start with Windows",
     "Toujours au premier plan": "Always on top",
     "Icône dans la zone de notification": "Icon in the notification area",
+    "Ouvrir le dossier des journaux": "Open the log folder",
     # Metrics
     "Réseau": "Network",
     "Réseau réception": "Network download",
