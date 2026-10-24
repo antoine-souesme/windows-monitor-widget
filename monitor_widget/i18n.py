@@ -28,6 +28,7 @@ ENGLISH = {
     "Colonnes": "Columns",
     "Rangs": "Rows",
     "(vide)": "(empty)",
+    "Sur 2 colonnes": "Span 2 columns",
     "Options des métriques": "Metric options",
     "Général": "General",
     "Langue": "Language",
@@ -37,6 +38,7 @@ ENGLISH = {
     "Toujours au premier plan": "Always on top",
     "Icône dans la zone de notification": "Icon in the notification area",
     "Ouvrir le dossier des journaux": "Open the log folder",
+    "À savoir": "Good to know",
     # Metrics
     "Réseau": "Network",
     "Réseau réception": "Network download",
@@ -48,6 +50,16 @@ ENGLISH = {
     "Pourcentage et valeur": "Percentage and value",
     "Valeur": "Value",
     "Temp. GPU": "GPU temp",
+    "FPS": "FPS",
+    "FPS bureau": "Desktop FPS",
+    "Windows ne donne les FPS des jeux qu'aux comptes du groupe "
+    "« Utilisateurs du journal de performances ». Ajoutez-y votre "
+    "compte, puis fermez votre session Windows et rouvrez-la. En "
+    "attendant, ce sont les FPS du bureau qui s'affichent.":
+        "Windows only gives the FPS of games to the accounts of the "
+        "\"Performance Log Users\" group. Add your account to it, then sign "
+        "out of Windows and back in. Until then, the desktop FPS is shown.",
+    "Ajouter mon compte au groupe": "Add my account to the group",
     # Units
     "o": "B",
     "Ko": "KB",

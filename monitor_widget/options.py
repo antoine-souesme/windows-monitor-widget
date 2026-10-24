@@ -19,6 +19,8 @@ TITLE = "Monitor Widget — Options"
 SMOOTH_LABEL = "Animations fluides (consomme plus de CPU)"
 MODES = [("normal", "Normal"), ("compact", "Compact"), ("custom", "Personnalisé")]
 FOOTER = "#888888"
+WIDE_LABEL = "Sur 2 colonnes"
+NOTICE_WIDTH = 360       # pixels after which a notice goes to the next line
 
 
 class OptionsWindow(tk.Toplevel):
@@ -45,6 +47,9 @@ class OptionsWindow(tk.Toplevel):
         self._options_holder = ttk.Frame(body)
         self._options_holder.pack(fill="x")
         self._build_options(self._options_holder)
+        self._notices_holder = ttk.Frame(body)
+        self._notices_holder.pack(fill="x")
+        self.notices_frame = None
         self._build_general(body)
         ttk.Label(body, text="Monitor Widget {}".format(__version__),
                   foreground=FOOTER, font=("Segoe UI", 8)).pack(anchor="w")
@@ -99,7 +104,8 @@ class OptionsWindow(tk.Toplevel):
                                                         column=2 * column + 1)
         self.cells_frame = ttk.Frame(self.grid_frame)
         self.cells_frame.pack(fill="x", pady=(8, 0))
-        self.cell_boxes = []
+        self.cell_boxes = {}     # cell index -> its list
+        self.wide_vars = {}      # cell index -> its "two columns" box
 
     def _build_options(self, parent):
         self.options_frame = self._frame(parent, tr("Options des métriques"))
@@ -191,29 +197,72 @@ class OptionsWindow(tk.Toplevel):
             self.options_frame.pack(fill="x", pady=(0, 10))
         else:
             self.options_frame.pack_forget()
+        self._show_notices()
+
+    def _show_notices(self):
+        """What the displayed metrics have to say about themselves, each with
+        the button that fixes it."""
+        if self.notices_frame is not None:
+            self.notices_frame.destroy()
+            self.notices_frame = None
+        values = self.widget.values
+        if values["mode"] == "custom":
+            keys = grid.needed_keys(values["grid_cells"])
+        else:
+            keys = values["probes"]
+        shown = [probes.PROBES[key] for key in keys if key in probes.PROBES]
+        notes = [cls for cls in shown if cls.notice()]
+        if not notes:
+            return
+        self.notices_frame = self._frame(self._notices_holder, tr("À savoir"))
+        for cls in notes:
+            ttk.Label(self.notices_frame, text=tr(cls.notice()),
+                      wraplength=NOTICE_WIDTH, justify="left").pack(anchor="w")
+            remedy = cls.remedy()
+            if remedy:
+                label, action = remedy
+                ttk.Button(self.notices_frame, text=tr(label),
+                           command=action).pack(anchor="w", pady=(4, 6))
 
     def _fill_grid(self):
-        """One list per cell, laid out like the grid itself."""
+        """One list per cell, laid out like the grid itself, with the box
+        stretching it over the next column. A wide cell hides the next one."""
         values = self.widget.values
         columns, rows = values["grid_columns"], values["grid_rows"]
+        wide = values["grid_wide"]
         self.columns_var.set(str(columns))
         self.rows_var.set(str(rows))
-        for box in self.cell_boxes:
-            box.destroy()
+        for item in self.cells_frame.winfo_children():
+            item.destroy()
+        # Columns of equal width, so a wide cell spans exactly two of them.
+        for column in range(grid.MAX_SIZE):
+            self.cells_frame.columnconfigure(
+                column, uniform="cell" if column < columns else "")
         choices = grid.choices()
         ids = [cell for cell, _name in choices]
         names = [name for _cell, name in choices]
         cells = values["grid_cells"]
-        self.cell_boxes = []
+        hidden = grid.covered(wide)
+        self.cell_boxes = {}
+        self.wide_vars = {}
         for index in range(columns * rows):
-            box = ttk.Combobox(self.cells_frame, values=names,
-                               state="readonly", width=18)
+            if index in hidden:
+                continue
+            row, column = divmod(index, columns)
+            holder = ttk.Frame(self.cells_frame)
+            holder.grid(row=row, column=column, columnspan=2 if index in wide else 1,
+                        padx=2, pady=2, sticky="ew")
+            box = ttk.Combobox(holder, values=names, state="readonly", width=18)
             cell = cells[index] if index < len(cells) else grid.EMPTY
             box.current(ids.index(cell) if cell in ids else 0)
             box.bind("<<ComboboxSelected>>", self._change_cell)
-            row, column = divmod(index, columns)
-            box.grid(row=row, column=column, padx=2, pady=2, sticky="ew")
-            self.cell_boxes.append(box)
+            box.pack(fill="x")
+            self.cell_boxes[index] = box
+            if column < columns - 1:
+                variable = tk.BooleanVar(value=index in wide)
+                ttk.Checkbutton(holder, text=tr(WIDE_LABEL), variable=variable,
+                                command=self._change_cell).pack(anchor="w")
+                self.wide_vars[index] = variable
 
     # ------------------------------------------------------------------
     # Changes
@@ -226,20 +275,34 @@ class OptionsWindow(tk.Toplevel):
     def _change_probes(self):
         self.widget.set_probes([key for key, variable in self.probe_vars.items()
                                 if variable.get()])
+        self._show_notices()
 
     def _change_size(self):
         values = self.widget.values
         columns, rows = int(self.columns_var.get()), int(self.rows_var.get())
         cells = grid.resized(values["grid_cells"], values["grid_columns"],
                              columns, rows)
-        self.widget.set_grid(columns, rows, cells)
+        wide = grid.resized_wide(values["grid_wide"], values["grid_columns"],
+                                 columns, rows)
+        self.widget.set_grid(columns, rows, grid.spanned(cells, wide), wide)
         self._fill_grid()
+        self._show_notices()
 
     def _change_cell(self, _event=None):
         values = self.widget.values
+        columns, rows = values["grid_columns"], values["grid_rows"]
         ids = [cell for cell, _name in grid.choices()]
-        cells = [ids[box.current()] for box in self.cell_boxes]
-        self.widget.set_grid(values["grid_columns"], values["grid_rows"], cells)
+        cells = [grid.EMPTY] * (columns * rows)
+        for index, box in self.cell_boxes.items():
+            cells[index] = ids[box.current()]
+        wide = grid.clean_wide([index for index, variable in self.wide_vars.items()
+                                if variable.get()], columns, rows)
+        relaid = wide != values["grid_wide"]
+        self.widget.set_grid(columns, rows, grid.spanned(cells, wide), wide)
+        if relaid:
+            # Rebuilt once the box that asked for it is done with its click.
+            self.after_idle(self._fill_grid)
+        self._show_notices()
 
     def _change_startup(self):
         self.startup_var.set(system.set_startup_enabled(self.startup_var.get()))

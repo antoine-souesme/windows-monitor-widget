@@ -8,7 +8,9 @@ it with `@register`. The context menu of the widget picks it up automatically.
 A metric can also offer choices (`options`): they show up under "Options des
 métriques", are stored in the configuration file and handed back to the probe
 through `configure()`. A metric can finally draw several values side by side
-inside its block by returning a tuple from `read()`.
+inside its block by returning a tuple from `read()`. When something keeps it
+from reading what it should, `notice()` says so in the options window and
+`remedy()` offers the button that fixes it.
 
 `slots()` names every value a metric can measure, whatever its options: the
 custom grid offers each of them separately. A metric whose options hide some
@@ -128,6 +130,9 @@ class Probe:
     def start(self):
         """Called once before the first read (optional priming)."""
 
+    def stop(self):
+        """Called once the metric is no longer drawn (optional cleanup)."""
+
     def configure(self, values):
         """Receive the configuration, once at creation and at every change."""
 
@@ -174,6 +179,22 @@ class Probe:
 
     def tint(self, column=0):
         """Fixed color of a column, or None to use the green to red scale."""
+        return None
+
+    def color_ratio(self, value, column=0):
+        """Place of the value on the green to red scale when it is not the
+        height of its graph (a metric where more is better), None otherwise."""
+        return None
+
+    @classmethod
+    def notice(cls):
+        """French text telling why the metric reads less than it could, shown
+        in the options window while it is displayed, or None."""
+        return None
+
+    @classmethod
+    def remedy(cls):
+        """(French button label, function) fixing what notice() tells, or None."""
         return None
 
 
@@ -423,3 +444,113 @@ class NetworkProbe(Probe):
         if self._display == "upload":
             return self.UPLOAD_COLOR
         return self.DOWNLOAD_COLOR if column == 0 else self.UPLOAD_COLOR
+
+
+def frame_rate(stamps, frequency, now, span=1.0, stale=2.0):
+    """Frames per second from the times (in ticks of `frequency` per second)
+    of the latest frames of a program: those of the last `span` seconds
+    before the newest one. 0 when it showed none for `stale` seconds, the
+    times arriving up to a second late."""
+    if frequency <= 0 or len(stamps) < 2:
+        return 0.0
+    newest = max(stamps)
+    if now - newest > stale * frequency:
+        return 0.0
+    recent = [stamp for stamp in stamps if stamp >= newest - span * frequency]
+    elapsed = (newest - min(recent)) / float(frequency)
+    if len(recent) < 2 or elapsed <= 0:
+        return 0.0
+    return (len(recent) - 1) / elapsed
+
+
+@register
+class FpsProbe(Probe):
+    """Frames per second of the game in full screen, counted from the frames
+    Windows sees it show. Without one, or when Windows refuses to tell (the
+    account must be in the Performance Log Users group), the frames the
+    desktop composes."""
+
+    key = "fps"
+    label = "FPS"
+    unit = ""
+    # Enough frames to scale the graph on, so an idle desktop stays low.
+    FLOOR = 60.0
+    # A game reads green from there, red when it gets close to nothing.
+    SMOOTH = 60.0
+    # The desktop is no game: its rate gets a color of its own.
+    DESKTOP_COLOR = "#26a69a"
+    NOTICE = ("Windows ne donne les FPS des jeux qu'aux comptes du groupe "
+              "« Utilisateurs du journal de performances ». Ajoutez-y votre "
+              "compte, puis fermez votre session Windows et rouvrez-la. En "
+              "attendant, ce sont les FPS du bureau qui s'affichent.")
+    REMEDY = "Ajouter mon compte au groupe"
+
+    def __init__(self):
+        self._trace = None
+        self._game = False
+        self._frames = None       # (desktop frames, time) at the previous read
+        self._peaks = deque([0.0] * PEAK_POINTS, maxlen=PEAK_POINTS)
+
+    def start(self):
+        self._trace = system.start_present_trace()
+        self._desktop_rate()
+
+    def stop(self):
+        system.stop_present_trace()
+        self._trace = None
+
+    def read(self):
+        desktop = self._desktop_rate()
+        game = self._game_rate()
+        self._game = game > 0
+        rate = game if self._game else desktop
+        self._peaks.append(rate)
+        return rate
+
+    def _game_rate(self):
+        if self._trace is None:
+            return 0.0
+        process = system.fullscreen_process()
+        if process is None:
+            return 0.0
+        return frame_rate(self._trace.stamps(process), self._trace.frequency,
+                          system.performance_counter())
+
+    def _desktop_rate(self):
+        count, now = system.read_desktop_frames(), time.monotonic()
+        previous, self._frames = self._frames, (count, now)
+        if count is None or previous is None or previous[0] is None:
+            return 0.0
+        elapsed = now - previous[1]
+        if elapsed <= 0:
+            return 0.0
+        return max(0.0, (count - previous[0]) / elapsed)
+
+    def format(self, value):
+        return "{:.0f}".format(value)
+
+    def template(self):
+        return "999"
+
+    def captions(self):
+        return [tr("FPS") if self._game else tr("FPS bureau")]
+
+    def ratio(self, value, column=0):
+        peak = max(list(self._peaks) + [self.FLOOR])
+        return max(0.0, min(value / peak, 1.0))
+
+    def tint(self, column=0):
+        return None if self._game else self.DESKTOP_COLOR
+
+    def color_ratio(self, value, column=0):
+        return 1.0 - max(0.0, min(value / self.SMOOTH, 1.0))
+
+    @classmethod
+    def notice(cls):
+        return cls.NOTICE if system.present_trace_denied() else None
+
+    @classmethod
+    def remedy(cls):
+        if not system.present_trace_denied():
+            return None
+        return cls.REMEDY, system.grant_present_trace
