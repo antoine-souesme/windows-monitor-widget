@@ -34,6 +34,7 @@ DEFAULTS = {
     "grid_columns": 1,      # size of the custom grid
     "grid_rows": 1,
     "grid_cells": [],       # row by row, see grid.py; empty = no grid yet
+    "grid_wide": [],        # index of the cells spanning two columns
     "grid_column_width": 200,   # width of one column of the custom grid
     "smooth": False,        # gauges glide between samples, at a CPU cost
     "language": i18n.DEFAULT,   # one of i18n.LANGUAGES
@@ -125,7 +126,10 @@ def _sanitize(values):
         size = values["grid_columns"] * values["grid_rows"]
         cells = (cells + [grid.EMPTY] * size)[:size]
         cells = [cell if grid.is_valid(cell) else grid.EMPTY for cell in cells]
-    values["grid_cells"] = cells
+    wide = grid.clean_wide(values.get("grid_wide"), values["grid_columns"],
+                           values["grid_rows"]) if cells else []
+    values["grid_wide"] = wide
+    values["grid_cells"] = grid.spanned(cells, wide)
     values["smooth"] = bool(values.get("smooth", False))
     if values.get("language") not in i18n.codes():
         values["language"] = DEFAULTS["language"]

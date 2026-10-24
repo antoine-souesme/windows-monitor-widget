@@ -225,5 +225,58 @@ class SlotTest(unittest.TestCase):
             self.assertEqual(probe.columns(), len(cls.slots()))
 
 
+
+class FrameRateTest(unittest.TestCase):
+
+    def test_frames_of_the_last_second(self):
+        # 61 frames, one every 1/60 s, on a clock of 1000 ticks a second.
+        stamps = [round(index * 1000 / 60.0) for index in range(61)]
+        self.assertAlmostEqual(probes.frame_rate(stamps, 1000, 1500), 60.0, delta=0.5)
+
+    def test_older_frames_are_left_out(self):
+        stamps = [0, 100, 200] + [2000 + 10 * index for index in range(101)]
+        self.assertAlmostEqual(probes.frame_rate(stamps, 1000, 3000), 100.0)
+
+    def test_a_program_showing_nothing_reads_zero(self):
+        self.assertEqual(probes.frame_rate([0, 10, 20], 1000, 5000), 0.0)
+        self.assertEqual(probes.frame_rate([10], 1000, 10), 0.0)
+        self.assertEqual(probes.frame_rate([], 1000, 0), 0.0)
+        self.assertEqual(probes.frame_rate([0, 10], 0, 10), 0.0)
+
+
+class FpsTest(unittest.TestCase):
+
+    def test_the_desktop_has_a_color_and_a_name_of_its_own(self):
+        probe = probes.FpsProbe()
+        self.assertEqual(probe.captions(), ["FPS bureau"])
+        self.assertEqual(probe.tint(), probes.FpsProbe.DESKTOP_COLOR)
+
+    def test_a_game_goes_from_red_to_green(self):
+        probe = probes.FpsProbe()
+        probe._game = True
+        self.assertIsNone(probe.tint())
+        self.assertEqual(probe.captions(), ["FPS"])
+        self.assertEqual(probe.color_ratio(144.0), 0.0)
+        self.assertEqual(probe.color_ratio(0.0), 1.0)
+
+    def test_the_graph_scales_on_the_strongest_rate(self):
+        probe = probes.FpsProbe()
+        self.assertEqual(probe.ratio(30.0), 0.5)
+        probe._peaks.append(240.0)
+        self.assertEqual(probe.ratio(120.0), 0.5)
+
+    def test_outside_windows_it_reads_zero_without_notice(self):
+        probe = probes.FpsProbe()
+        probe.start()
+        self.assertEqual(probe.read(), 0.0)
+        probe.stop()
+        self.assertIsNone(probes.FpsProbe.notice())
+        self.assertIsNone(probes.FpsProbe.remedy())
+
+    def test_the_text_holds_in_its_template(self):
+        probe = probes.FpsProbe()
+        self.assertEqual(probe.texts([143.6]), ["144"])
+        self.assertEqual(len(probe.template()), 3)
+
 if __name__ == "__main__":
     unittest.main()

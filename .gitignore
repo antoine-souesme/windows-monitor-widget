@@ -6,3 +6,5 @@ dist/
 .superpowers/
 
 docs/suivi/TODO.md
+
+.DS_Store

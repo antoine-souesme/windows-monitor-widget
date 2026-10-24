@@ -1,15 +1,19 @@
 # -*- coding: utf-8 -*-
 """Everything Windows specific: single instance, window styles, connected
-displays, GPU counters, auto start, notification area icon and the real
-place of files inside a Store package.
+displays, GPU counters, frame rates, auto start, notification area icon and
+the real place of files inside a Store package.
 
 Every function stays callable outside Windows (doing nothing useful, but not
 failing), so the rest of the program can be read and tested elsewhere.
 """
 
+import atexit
 import ctypes
 import os
 import sys
+import threading
+import uuid
+from collections import deque
 
 IS_WINDOWS = sys.platform.startswith("win")
 
@@ -299,6 +303,431 @@ def read_gpu_temperature(adapters):
             celsius = data.Temperature / 10.0
             hottest = celsius if hottest is None else max(hottest, celsius)
     return hottest
+
+
+# --------------------------------------------------------------------------
+# Frame rate: frames shown by the games (event tracing) and by the desktop
+# --------------------------------------------------------------------------
+
+# Fixed width types, so the layouts below can be checked on any system.
+_u8, _u16, _u32, _u64, _i64 = (ctypes.c_uint8, ctypes.c_uint16, ctypes.c_uint32,
+                               ctypes.c_uint64, ctypes.c_int64)
+
+
+class _Guid(ctypes.Structure):
+    _fields_ = [("Data1", _u32), ("Data2", _u16), ("Data3", _u16),
+                ("Data4", _u8 * 8)]
+
+
+def _guid(text):
+    return _Guid.from_buffer_copy(uuid.UUID(text).bytes_le)
+
+
+class _WnodeHeader(ctypes.Structure):
+    _fields_ = [("BufferSize", _u32), ("ProviderId", _u32),
+                ("HistoricalContext", _u64), ("TimeStamp", _i64),
+                ("Guid", _Guid), ("ClientContext", _u32), ("Flags", _u32)]
+
+
+class _TraceProperties(ctypes.Structure):
+    """EVENT_TRACE_PROPERTIES."""
+    _fields_ = [("Wnode", _WnodeHeader), ("BufferSize", _u32),
+                ("MinimumBuffers", _u32), ("MaximumBuffers", _u32),
+                ("MaximumFileSize", _u32), ("LogFileMode", _u32),
+                ("FlushTimer", _u32), ("EnableFlags", _u32),
+                ("AgeLimit", ctypes.c_int32), ("NumberOfBuffers", _u32),
+                ("FreeBuffers", _u32), ("EventsLost", _u32),
+                ("BuffersWritten", _u32), ("LogBuffersLost", _u32),
+                ("RealTimeBuffersLost", _u32), ("LoggerThreadId", ctypes.c_void_p),
+                ("LogFileNameOffset", _u32), ("LoggerNameOffset", _u32)]
+
+
+class _TracePropertiesBuffer(ctypes.Structure):
+    """The properties followed by the room Windows writes the session name to."""
+    _fields_ = [("properties", _TraceProperties), ("name", _u16 * 256)]
+
+
+class _EventTraceHeader(ctypes.Structure):
+    _fields_ = [("Size", _u16), ("FieldTypeFlags", _u16), ("Version", _u32),
+                ("ThreadId", _u32), ("ProcessId", _u32), ("TimeStamp", _i64),
+                ("Guid", _Guid), ("ProcessorTime", _u64)]
+
+
+class _EventTrace(ctypes.Structure):
+    _fields_ = [("Header", _EventTraceHeader), ("InstanceId", _u32),
+                ("ParentInstanceId", _u32), ("ParentGuid", _Guid),
+                ("MofData", ctypes.c_void_p), ("MofLength", _u32),
+                ("ClientContext", _u32)]
+
+
+class _SystemTime(ctypes.Structure):
+    _fields_ = [(name, _u16) for name in ("Year", "Month", "DayOfWeek", "Day",
+                                          "Hour", "Minute", "Second",
+                                          "Milliseconds")]
+
+
+class _TimeZone(ctypes.Structure):
+    _fields_ = [("Bias", ctypes.c_int32), ("StandardName", _u16 * 32),
+                ("StandardDate", _SystemTime), ("StandardBias", ctypes.c_int32),
+                ("DaylightName", _u16 * 32), ("DaylightDate", _SystemTime),
+                ("DaylightBias", ctypes.c_int32)]
+
+
+class _LogfileHeader(ctypes.Structure):
+    """TRACE_LOGFILE_HEADER."""
+    _fields_ = [("BufferSize", _u32), ("Version", _u32),
+                ("ProviderVersion", _u32), ("NumberOfProcessors", _u32),
+                ("EndTime", _i64), ("TimerResolution", _u32),
+                ("MaximumFileSize", _u32), ("LogFileMode", _u32),
+                ("BuffersWritten", _u32), ("LogInstanceGuid", _Guid),
+                ("LoggerName", ctypes.c_void_p), ("LogFileName", ctypes.c_void_p),
+                ("TimeZone", _TimeZone), ("BootTime", _i64), ("PerfFreq", _i64),
+                ("StartTime", _i64), ("ReservedFlags", _u32),
+                ("BuffersLost", _u32)]
+
+
+class _EventDescriptor(ctypes.Structure):
+    _fields_ = [("Id", _u16), ("Version", _u8), ("Channel", _u8),
+                ("Level", _u8), ("Opcode", _u8), ("Task", _u16),
+                ("Keyword", _u64)]
+
+
+class _EventHeader(ctypes.Structure):
+    _fields_ = [("Size", _u16), ("HeaderType", _u16), ("Flags", _u16),
+                ("EventProperty", _u16), ("ThreadId", _u32),
+                ("ProcessId", _u32), ("TimeStamp", _i64),
+                ("ProviderId", _Guid), ("EventDescriptor", _EventDescriptor),
+                ("ProcessorTime", _u64), ("ActivityId", _Guid)]
+
+
+class _EventRecord(ctypes.Structure):
+    _fields_ = [("EventHeader", _EventHeader), ("BufferContext", _u32),
+                ("ExtendedDataCount", _u16), ("UserDataLength", _u16),
+                ("ExtendedData", ctypes.c_void_p), ("UserData", ctypes.c_void_p),
+                ("UserContext", ctypes.c_void_p)]
+
+
+_EventRecordCallback = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)(
+    None, ctypes.POINTER(_EventRecord))
+
+
+class _TraceLogfile(ctypes.Structure):
+    """EVENT_TRACE_LOGFILEW."""
+    _fields_ = [("LogFileName", ctypes.c_wchar_p), ("LoggerName", ctypes.c_wchar_p),
+                ("CurrentTime", _i64), ("BuffersRead", _u32),
+                ("ProcessTraceMode", _u32), ("CurrentEvent", _EventTrace),
+                ("LogfileHeader", _LogfileHeader),
+                ("BufferCallback", ctypes.c_void_p), ("BufferSize", _u32),
+                ("Filled", _u32), ("EventsLost", _u32),
+                ("EventRecordCallback", _EventRecordCallback),
+                ("IsKernelTrace", _u32), ("Context", ctypes.c_void_p)]
+
+
+_TRACE_NAME = "MonitorWidgetFrames"
+# Providers writing an event each time a program shows a frame: DXGI covers
+# Direct3D 10 to 12 (and the Vulkan or OpenGL games drawn through it), D3D9
+# the older games.
+_DXGI = "{CA11C036-0102-4A2D-A6AD-F03CFED5D3C9}"
+_D3D9 = "{783ACA0A-790E-4D7F-8451-AA850511C6B9}"
+# (first part of the provider id, event id) of each "frame shown" event.
+_PRESENT_EVENTS = {(0xCA11C036, 42), (0xCA11C036, 55), (0x783ACA0A, 1)}
+_WNODE_FLAG_TRACED_GUID = 0x00020000
+_EVENT_TRACE_REAL_TIME_MODE = 0x00000100
+_EVENT_TRACE_CONTROL_STOP = 1
+_ENABLE_PROVIDER = 1
+_TRACE_LEVEL_INFORMATION = 4
+_PROCESS_TRACE_MODE_REAL_TIME = 0x00000100
+_PROCESS_TRACE_MODE_RAW_TIMESTAMP = 0x00001000
+_PROCESS_TRACE_MODE_EVENT_RECORD = 0x10000000
+_ERROR_ACCESS_DENIED = 5
+_INVALID_TRACE = (1 << 8 * ctypes.sizeof(ctypes.c_void_p)) - 1
+# Built in group allowed to trace events without being administrator
+# ("Performance Log Users"), named by its id so any language works.
+_PERFORMANCE_LOG_USERS = "S-1-5-32-559"
+
+_trace = None
+_trace_denied = False
+
+
+def performance_counter():
+    """Current time in ticks of the performance counter, the clock of the
+    frame times. 0 outside Windows."""
+    if not IS_WINDOWS:
+        return 0
+    ticks = _i64()
+    ctypes.windll.kernel32.QueryPerformanceCounter(ctypes.byref(ticks))
+    return ticks.value
+
+
+def _trace_functions():
+    """advapi32 with the prototypes of the trace functions, kept apart from
+    ctypes.windll so the other callers are not affected."""
+    advapi32 = ctypes.WinDLL("advapi32")
+    session = _u64
+    properties = ctypes.POINTER(_TraceProperties)
+    advapi32.StartTraceW.argtypes = [ctypes.POINTER(session), ctypes.c_wchar_p,
+                                     properties]
+    advapi32.StartTraceW.restype = _u32
+    advapi32.ControlTraceW.argtypes = [session, ctypes.c_wchar_p, properties, _u32]
+    advapi32.ControlTraceW.restype = _u32
+    advapi32.EnableTraceEx2.argtypes = [session, ctypes.POINTER(_Guid), _u32,
+                                        _u8, _u64, _u64, _u32, ctypes.c_void_p]
+    advapi32.EnableTraceEx2.restype = _u32
+    advapi32.OpenTraceW.argtypes = [ctypes.POINTER(_TraceLogfile)]
+    advapi32.OpenTraceW.restype = session
+    advapi32.ProcessTrace.argtypes = [ctypes.POINTER(session), _u32,
+                                      ctypes.c_void_p, ctypes.c_void_p]
+    advapi32.ProcessTrace.restype = _u32
+    advapi32.CloseTrace.argtypes = [session]
+    advapi32.CloseTrace.restype = _u32
+    return advapi32
+
+
+def _trace_properties():
+    """Fresh properties of a real time session, flushed every second."""
+    buffer = _TracePropertiesBuffer()
+    properties = buffer.properties
+    properties.Wnode.BufferSize = ctypes.sizeof(buffer)
+    properties.Wnode.Flags = _WNODE_FLAG_TRACED_GUID
+    properties.Wnode.ClientContext = 1          # performance counter clock
+    properties.LogFileMode = _EVENT_TRACE_REAL_TIME_MODE
+    properties.FlushTimer = 1
+    properties.LoggerNameOffset = ctypes.sizeof(_TraceProperties)
+    return buffer
+
+
+def _control(buffer):
+    """Pointer to the properties at the head of a buffer."""
+    return ctypes.cast(ctypes.byref(buffer), ctypes.POINTER(_TraceProperties))
+
+
+class PresentTrace:
+    """Real time trace session noting when each process shows a frame. Its
+    events are read on a thread of their own, which blocks while it waits."""
+
+    KEPT = 1000          # latest frame times kept for each process
+    FORGOTTEN = 5        # seconds without a frame before a process is dropped
+
+    def __init__(self, advapi32):
+        self._advapi32 = advapi32
+        self._lock = threading.Lock()
+        self._stamps = {}        # process id -> deque of frame times
+        self._callback = _EventRecordCallback(self._on_event)
+        frequency = _i64()
+        ctypes.windll.kernel32.QueryPerformanceFrequency(ctypes.byref(frequency))
+        self.frequency = frequency.value
+        threading.Thread(target=self._consume, name="Frame trace",
+                         daemon=True).start()
+
+    def _on_event(self, record):
+        header = record.contents.EventHeader
+        if (header.ProviderId.Data1, header.EventDescriptor.Id) not in _PRESENT_EVENTS:
+            return
+        with self._lock:
+            stamps = self._stamps.get(header.ProcessId)
+            if stamps is None:
+                stamps = self._stamps[header.ProcessId] = deque(maxlen=self.KEPT)
+            stamps.append(header.TimeStamp)
+
+    def _consume(self):
+        """Deliver the events until the session is stopped. A failure lands
+        in the log through the thread error hook."""
+        logfile = _TraceLogfile()
+        logfile.LoggerName = _TRACE_NAME
+        # Raw times: the performance counter, not converted to dates.
+        logfile.ProcessTraceMode = (_PROCESS_TRACE_MODE_REAL_TIME
+                                    | _PROCESS_TRACE_MODE_EVENT_RECORD
+                                    | _PROCESS_TRACE_MODE_RAW_TIMESTAMP)
+        logfile.EventRecordCallback = self._callback
+        handle = _u64(self._advapi32.OpenTraceW(ctypes.byref(logfile)))
+        if handle.value == _INVALID_TRACE:
+            raise OSError("OpenTrace failed: {}".format(ctypes.GetLastError()))
+        try:
+            self._advapi32.ProcessTrace(ctypes.byref(handle), 1, None, None)
+        finally:
+            self._advapi32.CloseTrace(handle)
+
+    def stamps(self, process):
+        """Times of the latest frames of a process, oldest first."""
+        limit = performance_counter() - self.FORGOTTEN * self.frequency
+        with self._lock:
+            for key in [key for key, stamps in self._stamps.items()
+                        if not stamps or stamps[-1] < limit]:
+                del self._stamps[key]
+            return list(self._stamps.get(process, ()))
+
+
+def start_present_trace():
+    """Start noting the frames every process shows, or None when Windows
+    refuses (see present_trace_denied) or cannot (not Windows...). One
+    session for the whole program."""
+    global _trace, _trace_denied
+    if _trace is not None or not IS_WINDOWS:
+        return _trace
+    try:
+        advapi32 = _trace_functions()
+        session = _u64()
+        buffer = _trace_properties()
+        status = advapi32.StartTraceW(ctypes.byref(session), _TRACE_NAME,
+                                      _control(buffer))
+        if status == _ERROR_ALREADY_EXISTS:
+            # Left behind by a run that ended without stopping it.
+            advapi32.ControlTraceW(0, _TRACE_NAME,
+                                   _control(_trace_properties()),
+                                   _EVENT_TRACE_CONTROL_STOP)
+            buffer = _trace_properties()
+            status = advapi32.StartTraceW(ctypes.byref(session), _TRACE_NAME,
+                                          _control(buffer))
+        _trace_denied = status == _ERROR_ACCESS_DENIED
+        if status != 0:
+            return None
+        for provider in (_DXGI, _D3D9):
+            advapi32.EnableTraceEx2(session, ctypes.byref(_guid(provider)),
+                                    _ENABLE_PROVIDER, _TRACE_LEVEL_INFORMATION,
+                                    0, 0, 0, None)
+        _trace = PresentTrace(advapi32)
+        # A session outlives the program that started it.
+        atexit.register(stop_present_trace)
+        return _trace
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
+def stop_present_trace():
+    """Stop the session started by start_present_trace, if any."""
+    global _trace
+    if _trace is None:
+        return
+    try:
+        _trace._advapi32.ControlTraceW(0, _TRACE_NAME,
+                                       _control(_trace_properties()),
+                                       _EVENT_TRACE_CONTROL_STOP)
+    except (AttributeError, OSError, ValueError):
+        pass
+    _trace = None
+
+
+def present_trace_denied():
+    """True when Windows refused the last attempt to note the frames: the
+    account is neither administrator nor in the Performance Log Users group."""
+    return _trace_denied
+
+
+def grant_present_trace():
+    """Add the current account to the Performance Log Users group, through
+    the administrator prompt of Windows. It takes effect at the next logon.
+    True when the prompt could be shown."""
+    if not IS_WINDOWS:
+        return False
+    domain, user = os.environ.get("USERDOMAIN"), os.environ.get("USERNAME")
+    if not user:
+        return False
+    # The command runs as the administrator who answers the prompt, who may
+    # not be the user: the account is named here, in a quoted string.
+    account = "{}\\{}".format(domain, user) if domain else user
+    command = "Add-LocalGroupMember -SID {} -Member '{}'".format(
+        _PERFORMANCE_LOG_USERS, account.replace("'", "''"))
+    try:
+        result = ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", "powershell.exe",
+            "-NoProfile -WindowStyle Hidden -Command \"{}\"".format(command),
+            None, 0)
+    except (AttributeError, OSError):
+        return False
+    # Above 32 means started; a refused prompt gives an error code.
+    return result > 32
+
+
+class _UnsignedRatio(ctypes.Structure):
+    _fields_ = [("Numerator", _u32), ("Denominator", _u32)]
+
+
+class _DwmTimingInfo(ctypes.Structure):
+    """DWM_TIMING_INFO, packed on single bytes like in dwmapi.h."""
+    _pack_ = 1
+    _fields_ = ([("cbSize", _u32), ("rateRefresh", _UnsignedRatio),
+                 ("qpcRefreshPeriod", _u64), ("rateCompose", _UnsignedRatio),
+                 ("qpcVBlank", _u64), ("cRefresh", _u64), ("cDXRefresh", _u32),
+                 ("qpcCompose", _u64), ("cFrame", _u64), ("cDXPresent", _u32),
+                 ("cRefreshFrame", _u64), ("cFrameSubmitted", _u64),
+                 ("cDXPresentSubmitted", _u32), ("cFrameConfirmed", _u64),
+                 ("cDXPresentConfirmed", _u32), ("cRefreshConfirmed", _u64),
+                 ("cDXRefreshConfirmed", _u32), ("cFramesLate", _u64),
+                 ("cFramesOutstanding", _u32)]
+                + [(name, _u64) for name in (
+                    "cFrameDisplayed", "qpcFrameDisplayed",
+                    "cRefreshFrameDisplayed", "cFrameComplete",
+                    "qpcFrameComplete", "cFramePending", "qpcFramePending",
+                    "cFramesDisplayed", "cFramesComplete", "cFramesPending",
+                    "cFramesAvailable", "cFramesDropped", "cFramesMissed",
+                    "cRefreshNextDisplayed", "cRefreshNextPresented",
+                    "cRefreshesDisplayed", "cRefreshesPresented",
+                    "cRefreshStarted", "cPixelsReceived", "cPixelsDrawn",
+                    "cBuffersEmpty")])
+
+
+def read_desktop_frames():
+    """Frames the desktop has composed so far, None when Windows does not
+    say (or outside Windows)."""
+    if not IS_WINDOWS:
+        return None
+    try:
+        info = _DwmTimingInfo()
+        info.cbSize = ctypes.sizeof(info)
+        if ctypes.windll.dwmapi.DwmGetCompositionTimingInfo(
+                None, ctypes.byref(info)) != 0:
+            return None
+        return info.cFrame
+    except (AttributeError, OSError):
+        return None
+
+
+class _Rect(ctypes.Structure):
+    _fields_ = [("left", ctypes.c_int32), ("top", ctypes.c_int32),
+                ("right", ctypes.c_int32), ("bottom", ctypes.c_int32)]
+
+
+class _MonitorInfo(ctypes.Structure):
+    _fields_ = [("cbSize", _u32), ("rcMonitor", _Rect), ("rcWork", _Rect),
+                ("dwFlags", _u32)]
+
+
+def fullscreen_process():
+    """Id of the process owning the foreground window when that window
+    covers its whole display (a game in full screen), None otherwise."""
+    if not IS_WINDOWS:
+        return None
+    try:
+        user32 = ctypes.WinDLL("user32")
+        user32.GetForegroundWindow.restype = ctypes.c_void_p
+        user32.GetShellWindow.restype = ctypes.c_void_p
+        user32.GetWindowRect.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Rect)]
+        user32.MonitorFromWindow.argtypes = [ctypes.c_void_p, _u32]
+        user32.MonitorFromWindow.restype = ctypes.c_void_p
+        user32.GetMonitorInfoW.argtypes = [ctypes.c_void_p,
+                                           ctypes.POINTER(_MonitorInfo)]
+        user32.GetWindowThreadProcessId.argtypes = [ctypes.c_void_p,
+                                                    ctypes.POINTER(_u32)]
+        window = user32.GetForegroundWindow()
+        # The desktop itself covers the screen too.
+        if not window or window == user32.GetShellWindow():
+            return None
+        rect = _Rect()
+        info = _MonitorInfo()
+        info.cbSize = ctypes.sizeof(info)
+        monitor = user32.MonitorFromWindow(window, _MONITOR_DEFAULTTONULL)
+        if (not monitor or not user32.GetWindowRect(window, ctypes.byref(rect))
+                or not user32.GetMonitorInfoW(monitor, ctypes.byref(info))):
+            return None
+        screen = info.rcMonitor
+        if (rect.left > screen.left or rect.top > screen.top
+                or rect.right < screen.right or rect.bottom < screen.bottom):
+            return None
+        process = _u32()
+        user32.GetWindowThreadProcessId(window, ctypes.byref(process))
+        return process.value or None
+    except (AttributeError, OSError, ValueError):
+        return None
 
 
 # --------------------------------------------------------------------------

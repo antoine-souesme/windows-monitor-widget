@@ -49,6 +49,24 @@ class GridTest(unittest.TestCase):
         self.assertEqual(grid.needed_keys(["", "net:1", "cpu:0", "net:0"]), ["net", "cpu"])
         self.assertEqual(grid.needed_keys(["", ""]), [])
 
+    def test_wide_cells_keep_only_what_fits(self):
+        # 3 columns × 2 rows: 2 is on the last column, 1 is covered by 0,
+        # 6 is outside, True and "4" are no index.
+        self.assertEqual(grid.clean_wide([4, 2, 1, 0, 6, True, "4", 0], 3, 2), [0, 4])
+        self.assertEqual(grid.clean_wide([0], 1, 3), [])
+        self.assertEqual(grid.clean_wide(None, 2, 2), [])
+
+    def test_the_cell_under_a_wide_one_is_emptied(self):
+        self.assertEqual(grid.spanned(["a", "b", "c", "d"], [0]), ["a", "", "c", "d"])
+
+    def test_resizing_keeps_wide_cells_in_place(self):
+        # 2 columns × 4 rows, the last row wide, as one wide line under
+        # three rows of two.
+        self.assertEqual(grid.resized_wide([6], 2, 3, 4), [9])
+        self.assertEqual(grid.resized_wide([6], 2, 1, 4), [])
+        self.assertEqual(grid.resized_wide([6], 2, 2, 3), [])
+        self.assertEqual(grid.resized_wide([1], 3, 2, 2), [])
+
     def test_column_width_fits_the_screen(self):
         self.assertEqual(grid.fit_column_width(300, 6, 1200, 140, 600), 200)
         self.assertEqual(grid.fit_column_width(300, 6, 600, 140, 600), 140)
