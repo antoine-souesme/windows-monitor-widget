@@ -121,6 +121,19 @@ class ConfigTest(unittest.TestCase):
                     "grid_cells": ["cpu:0", "net:9", 3, "nope:0", "ram:0"]})
         self.assertEqual(config.load()["grid_cells"], ["cpu:0", "", "", ""])
 
+    def test_wide_cells_are_checked_and_hide_their_neighbour(self):
+        self.write({"grid_columns": 2, "grid_rows": 2,
+                    "grid_cells": ["cpu:0", "ram:0", "fps:0", "net:0"],
+                    "grid_wide": [2, 3, 9]})
+        values = config.load()
+        self.assertEqual(values["grid_wide"], [2])
+        self.assertEqual(values["grid_cells"], ["cpu:0", "ram:0", "fps:0", ""])
+
+    def test_broken_wide_cells_fall_back_to_none(self):
+        self.write({"grid_columns": 2, "grid_rows": 1,
+                    "grid_cells": ["cpu:0", "ram:0"], "grid_wide": "0"})
+        self.assertEqual(config.load()["grid_wide"], [])
+
     def test_short_cell_list_is_padded(self):
         self.write({"grid_columns": 2, "grid_rows": 1, "grid_cells": ["net:1"]})
         self.assertEqual(config.load()["grid_cells"], ["net:1", ""])

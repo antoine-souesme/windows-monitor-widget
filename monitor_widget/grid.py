@@ -4,7 +4,8 @@ tested without a display.
 
 A cell names one value of one metric as "<metric key>:<slot index>"
 ("net:1" is the network upload), or is empty. The cells are stored row by
-row.
+row. A wide cell spans its own column and the next one: the cell it covers
+stays in the list, always empty.
 """
 
 from . import probes
@@ -59,6 +60,43 @@ def resized(cells, columns, new_columns, new_rows):
             inside = column < columns and index < len(cells)
             kept.append(cells[index] if inside else EMPTY)
     return kept
+
+
+def clean_wide(wide, columns, rows):
+    """Wide cells, by index, that can be: inside the grid, not on its last
+    column and not covered by another one. Sorted, each once."""
+    kept = []
+    if not isinstance(wide, list):
+        return kept
+    indexes = {index for index in wide
+               if isinstance(index, int) and not isinstance(index, bool)}
+    for index in sorted(indexes):
+        if (0 <= index < columns * rows and index % columns < columns - 1
+                and index - 1 not in kept):
+            kept.append(index)
+    return kept
+
+
+def covered(wide):
+    """Cells hidden under a wide cell: the one on its right."""
+    return {index + 1 for index in wide}
+
+
+def spanned(cells, wide):
+    """The cells, those hidden under a wide cell emptied."""
+    hidden = covered(wide)
+    return [EMPTY if index in hidden else cell for index, cell in enumerate(cells)]
+
+
+def resized_wide(wide, columns, new_columns, new_rows):
+    """Wide cells once the grid is resized: each keeps its row and column,
+    those that no longer fit become normal again."""
+    moved = []
+    for index in wide:
+        row, column = divmod(index, columns)
+        if row < new_rows and column < new_columns - 1:
+            moved.append(row * new_columns + column)
+    return clean_wide(moved, new_columns, new_rows)
 
 
 def initial(cells):

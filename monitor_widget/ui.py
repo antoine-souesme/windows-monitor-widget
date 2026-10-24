@@ -352,11 +352,13 @@ class WidgetWindow(tk.Toplevel):
                     top += block + gap
 
     def _draw_grid(self):
-        """Every filled cell of the custom grid as a compact line. Cells
-        showing the same value share its probe, history and gauge."""
+        """Every filled cell of the custom grid as a compact line, twice as
+        long for a wide cell. Cells showing the same value share its probe,
+        history and gauge."""
         shown = {probe.key: probe for probe in self.probes}
         columns = self.values["grid_columns"]
         width = self.values["grid_column_width"]
+        wide = set(self.values["grid_wide"])
         for index, cell in enumerate(self.values["grid_cells"]):
             parsed = grid.parse(cell)
             if parsed is None or parsed[0] not in shown:
@@ -367,7 +369,8 @@ class WidgetWindow(tk.Toplevel):
             row, column = divmod(index, columns)
             x0 = column * width
             top = PADDING + row * (COMPACT_HEIGHT + COMPACT_GAP)
-            self._draw_compact_line(probe, slot, top, x0, x0 + width)
+            span = 2 if index in wide else 1
+            self._draw_compact_line(probe, slot, top, x0, x0 + span * width)
 
     def _last(self, probe):
         """Most recent sample of a metric, zeros before the first one."""
@@ -433,7 +436,8 @@ class WidgetWindow(tk.Toplevel):
             ratio = self.gauges.setdefault((probe.key, column), target)
         else:
             ratio = self.gauges[(probe.key, column)] = target
-        color = probe.tint(column) or load_color(ratio)
+        color = probe.tint(column) or load_color(
+            self._scale_ratio(probe, value, column, ratio))
         left = x0 + MARGIN
         right = x1 - MARGIN
         bottom = top + COMPACT_GRAPH
@@ -485,7 +489,15 @@ class WidgetWindow(tk.Toplevel):
 
     def _color(self, probe, value, column):
         """Color of one column: the metric decides, or the green to red scale."""
-        return probe.tint(column) or load_color(probe.ratio(value, column))
+        return probe.tint(column) or load_color(
+            self._scale_ratio(probe, value, column, probe.ratio(value, column)))
+
+    @staticmethod
+    def _scale_ratio(probe, value, column, ratio):
+        """Place on the green to red scale: the metric's own when it has
+        one, the height of its graph otherwise."""
+        scale = probe.color_ratio(value, column)
+        return ratio if scale is None else scale
 
     def _draw_graph(self, probe, column, x0, y0, x1, y1, color, baseline=True,
                     fill=None):
@@ -628,6 +640,7 @@ class WidgetWindow(tk.Toplevel):
             self.values["grid_columns"] = columns
             self.values["grid_rows"] = rows
             self.values["grid_cells"] = cells
+            self.values["grid_wide"] = []
         self.values["mode"] = mode
         if mode == "custom":
             self.values["grid_column_width"] = self._fit_column_width(
@@ -648,10 +661,11 @@ class WidgetWindow(tk.Toplevel):
         config.save(self.values)
         self._resize()
 
-    def set_grid(self, columns, rows, cells):
+    def set_grid(self, columns, rows, cells, wide):
         self.values["grid_columns"] = columns
         self.values["grid_rows"] = rows
         self.values["grid_cells"] = list(cells)
+        self.values["grid_wide"] = list(wide)
         self.values["grid_column_width"] = self._fit_column_width(
             self.values["grid_column_width"])
         self._reconfigure()
@@ -736,7 +750,8 @@ class WidgetWindow(tk.Toplevel):
 
     def _apply_selection(self, keys):
         """Rebuild the list of probes, keeping the history of those already
-        displayed so switching an unrelated metric does not reset the graphs."""
+        displayed so switching an unrelated metric does not reset the graphs.
+        Those no longer displayed are stopped."""
         kept = []
         histories = {}
         for key in keys:
@@ -751,6 +766,9 @@ class WidgetWindow(tk.Toplevel):
             kept.append(probe)
             histories[key] = self.histories.get(
                 key, _blank_history(probe.columns()))
+        for probe in self.probes:
+            if probe not in kept:
+                probe.stop()
         self.probes = kept
         self.histories = histories
 
@@ -795,6 +813,8 @@ class WidgetWindow(tk.Toplevel):
             except tk.TclError:
                 pass
         self.tray.hide()
+        for probe in self.probes:
+            probe.stop()
         self.values["x"] = self.winfo_x()
         self.values["y"] = self.winfo_y()
         config.save(self.values)

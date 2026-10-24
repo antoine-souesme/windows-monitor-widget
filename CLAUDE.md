@@ -3,7 +3,7 @@
 Borderless Windows desktop widget (Python 3 + tkinter + psutil) showing live
 system metrics: large percentage, 60-second scrolling graph, green to red
 color scale. Three display modes: Normal (tall blocks), Compact (small lines)
-and Personnalisé (a free grid of small lines).
+and Personnalisé (a free grid of small lines, a cell may span two columns).
 
 ## Conventions
 
@@ -27,11 +27,11 @@ and Personnalisé (a free grid of small lines).
 | --- | --- |
 | `main.py` | entry point: single instance, hidden root window |
 | `monitor_widget/config.py` | `%APPDATA%\MonitorWidget\config.json` read/write |
-| `monitor_widget/system.py` | Win32 styles, displays, GPU, `HKCU\...\Run`, mutex, notification icon |
+| `monitor_widget/system.py` | Win32 styles, displays, GPU, frame rates, `HKCU\...\Run`, mutex, notification icon |
 | `monitor_widget/crashlog.py` | `log.txt` next to the config: starts, exits, errors, crashes, freezes |
 | `monitor_widget/probes.py` | the measurable metrics |
 | `monitor_widget/i18n.py` | language of the texts: French keys, English table |
-| `monitor_widget/grid.py` | custom grid arithmetic: cells, resizing, widths |
+| `monitor_widget/grid.py` | custom grid arithmetic: cells, wide cells, resizing, widths |
 | `monitor_widget/ui.py` | window, drawing, dragging, two-entry context menu, notification icon menu |
 | `monitor_widget/icon.ico` | drawn by `packaging/make_icons.py`, bundled by the spec |
 | `monitor_widget/options.py` | options window: every setting, applied at once |
@@ -87,7 +87,11 @@ the options window, their default lands in the configuration file on its own,
 and the answer comes back through `configure()`. A metric can also draw
 several values side by side by returning a tuple from `read()` and saying how
 many with `columns()`; `texts()` gives the text of each one and `tint()` its
-color.
+color. `color_ratio()` places a value on the green to red scale when that is
+not the height of its graph (FPS: more is better), and `stop()` releases what
+`start()` took once the metric is no longer drawn. When something keeps a
+metric from reading what it should, `notice()` says so under "À savoir" in
+the options window and `remedy()` gives the button that fixes it.
 
 `slots()` names every value a metric can measure, whatever its options: each
 one is a separate choice of the custom grid, and `shown_slots()` says which
@@ -105,3 +109,13 @@ python -m unittest discover -s tests
 
 Outside Windows the window still opens (without transparency, tool window
 style or registry support), which is enough to check drawing and sampling.
+
+## FPS metric
+
+The frames of a game are counted from the "frame shown" events of DXGI and
+D3D9, read through a real time event tracing session (`MonitorWidgetFrames`)
+on a thread of its own. Only the foreground window covering its whole display
+counts as a game. Windows only allows that session to administrators and to
+the "Performance Log Users" group (`S-1-5-32-559`): without it, or without a
+game, the metric shows the frames the desktop composes (DWM). The session
+outlives a crash: the next start stops the one left behind.
