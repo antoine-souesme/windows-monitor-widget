@@ -826,7 +826,12 @@ class WidgetWindow(tk.Toplevel):
         self.tray.hide()
         for probe in self.probes:
             probe.stop()
-        self.values["x"] = self.winfo_x()
-        self.values["y"] = self.winfo_y()
+        # The widget can already be gone (Windows tore it down): keep the
+        # last known position rather than stay alive with no window.
+        try:
+            self.values["x"] = self.winfo_x()
+            self.values["y"] = self.winfo_y()
+        except tk.TclError:
+            pass
         config.save(self.values)
         self.master.destroy()
