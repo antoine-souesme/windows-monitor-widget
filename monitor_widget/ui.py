@@ -65,13 +65,22 @@ def grid_height(rows):
 _FONTS = {}
 
 
+def held_font(spec):
+    """Font object of a ("Segoe UI", size[, "bold"]) tuple, created once.
+    Handed a tuple, the canvas builds a Windows font on every drawing and
+    frees it with the items: thirty times a second, that churn ends up
+    exhausting the graphic resources of Windows (CreateDIBSection error)."""
+    font = _FONTS.get(spec)
+    if font is None:
+        weight = spec[2] if len(spec) > 2 else "normal"
+        font = _FONTS[spec] = tkfont.Font(family=spec[0], size=spec[1],
+                                          weight=weight)
+    return font
+
+
 def _bold(size):
     """Bold font of that size, created once."""
-    font = _FONTS.get(size)
-    if font is None:
-        font = _FONTS[size] = tkfont.Font(family="Segoe UI", size=size,
-                                          weight="bold")
-    return font
+    return held_font(("Segoe UI", size, "bold"))
 
 
 def fitting_font(text, width, sizes):
@@ -333,7 +342,8 @@ class WidgetWindow(tk.Toplevel):
                                 fill=BACKGROUND, outline=BORDER)
         if not self.probes:
             self.canvas.create_text(width // 2, height // 2, text=tr(EMPTY_TEXT),
-                                    fill=CAPTION, font=("Segoe UI", 9),
+                                    fill=CAPTION,
+                                    font=held_font(("Segoe UI", 9)),
                                     width=width - 2 * MARGIN, justify="center")
         elif self._custom():
             self._draw_grid()
@@ -384,7 +394,7 @@ class WidgetWindow(tk.Toplevel):
         values = self._last(probe)
         texts = probe.texts(values)
         self.canvas.create_text(MARGIN, top + 6, anchor="w", text=tr(probe.label),
-                                fill=CAPTION, font=("Segoe UI", 9))
+                                fill=CAPTION, font=held_font(("Segoe UI", 9)))
         areas = columns(MARGIN, width - MARGIN, len(values))
         rooms = columns(MARGIN, text_room(width) - MARGIN, len(values))
         for index, (x0, x1) in enumerate(areas):
@@ -395,10 +405,10 @@ class WidgetWindow(tk.Toplevel):
             x = x0
             if prefix:
                 self.canvas.create_text(x, top + 30, anchor="w", text=prefix,
-                                        fill=TEXT, font=prefix_font)
+                                        fill=TEXT, font=held_font(prefix_font))
                 x += text_width(prefix, prefix_font) + PREFIX_GAP
             self.canvas.create_text(x, top + 30, anchor="w", text=texts[index],
-                                    fill=TEXT, font=font)
+                                    fill=TEXT, font=held_font(font))
             self._draw_graph(probe, index, x0, top + 44, x1, top + block,
                              self._color(probe, values[index], index))
 
@@ -413,6 +423,7 @@ class WidgetWindow(tk.Toplevel):
     def _outlined_text(self, x, y, text, font, anchor):
         """Light text rimmed with a dark outline, readable over any curve:
         the text is drawn dark one pixel away all around, then on top."""
+        font = held_font(font)
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
                 if dx or dy:
@@ -815,7 +826,12 @@ class WidgetWindow(tk.Toplevel):
         self.tray.hide()
         for probe in self.probes:
             probe.stop()
-        self.values["x"] = self.winfo_x()
-        self.values["y"] = self.winfo_y()
+        # The widget can already be gone (Windows tore it down): keep the
+        # last known position rather than stay alive with no window.
+        try:
+            self.values["x"] = self.winfo_x()
+            self.values["y"] = self.winfo_y()
+        except tk.TclError:
+            pass
         config.save(self.values)
         self.master.destroy()
