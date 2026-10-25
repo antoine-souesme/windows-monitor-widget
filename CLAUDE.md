@@ -39,6 +39,7 @@ and Personnalisé (a free grid of small lines, a cell may span two columns).
 | `tests/` | configuration and layout tests (no display needed) |
 | `packaging/` | PyInstaller spec and MSIX build script |
 | `packaging/msix/` | manifest and logos of the Microsoft Store package |
+| `packaging/store/` | Store screenshots and presentation image, drawn from the real widget with simulated values (`export.py`, then `compose.py`) |
 | `.github/workflows/tests.yml` | runs the tests on every pull request |
 | `.github/workflows/msix.yml` | builds the Store package: artifact on a manual run, release on a tag |
 
