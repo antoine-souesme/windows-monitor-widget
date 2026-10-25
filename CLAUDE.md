@@ -36,6 +36,7 @@ and Personnalisé (a free grid of small lines, a cell may span two columns).
 | `monitor_widget/icon.ico` | drawn by `packaging/make_icons.py`, bundled by the spec |
 | `monitor_widget/options.py` | options window: every setting, applied at once |
 | `monitor_widget/version.py` | single source of truth for the version |
+| `docs/store-description.md` | text of the Store listing, French and English |
 | `tests/` | configuration and layout tests (no display needed) |
 | `packaging/` | PyInstaller spec and MSIX build script |
 | `packaging/msix/` | manifest and logos of the Microsoft Store package |
